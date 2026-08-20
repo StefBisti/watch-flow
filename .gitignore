@@ -1,0 +1,13 @@
+# Project
+node_modules
+.next
+dist
+.turbo
+.claude/settings.local.json
+.DS_Store
+coverage/
+.vercel
+
+# Secrets
+.env*
+!.env.example
