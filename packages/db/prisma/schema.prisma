@@ -1,0 +1,157 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String     @unique
+  emailVerified DateTime?
+  image         String?
+  role          String     @default("user")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime? // soft delete → hard delete job after 30d (GDPR)
+  watches       Watch[]
+  auditLogs     AuditLog[]
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Watch {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  flow         Json
+  intervalMin  Int
+  enabled      Boolean       @default(true)
+  nextRunAt    DateTime
+  lastRunAt    DateTime?
+  lastStatus   String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  runs         Run[]
+  snapshots    Snapshot[]
+  watchSecrets WatchSecret[]
+
+  @@index([enabled, nextRunAt])
+  @@index([userId])
+}
+
+model Run {
+  id            String         @id @default(cuid())
+  watchId       String
+  watch         Watch          @relation(fields: [watchId], references: [id], onDelete: Cascade)
+  status        String
+  triggered     String
+  error         String?
+  log           Json // redact headers/secrets before storing
+  startedAt     DateTime       @default(now())
+  endedAt       DateTime?
+  notifications Notification[]
+
+  @@index([watchId, startedAt])
+}
+
+model Snapshot {
+  id        String   @id @default(cuid())
+  watchId   String
+  watch     Watch    @relation(fields: [watchId], references: [id], onDelete: Cascade)
+  value     String // truncated at 10 KB
+  hash      String
+  createdAt DateTime @default(now())
+
+  @@index([watchId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  channel   String
+  target    String // for webhooks store host only, not full URL w/ tokens
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+}
+
+// Secrets users give us (custom headers like Authorization for their APIs)
+model WatchSecret {
+  id         String   @id @default(cuid())
+  watchId    String
+  name       String // e.g. "API_TOKEN", referenced in flow as {{secret.API_TOKEN}}
+  ciphertext Bytes // AES-256-GCM, key from env (KMS later), never returned to client after creation
+  iv         Bytes
+  createdAt  DateTime @default(now())
+
+  watch Watch @relation(fields: [watchId], references: [id], onDelete: Cascade)
+
+  @@unique([watchId, name])
+}
+
+// Audit trail
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // watch.create | watch.update | watch.delete | secret.create | login | account.delete
+  target    String?
+  ip        String? // hashed (sha256 + daily salt) — we don't need raw IPs
+  userAgent String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
