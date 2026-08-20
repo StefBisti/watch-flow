@@ -18,7 +18,7 @@ model User {
   email         String     @unique
   emailVerified DateTime?
   image         String?
-  role          String     @default("user")
+  role          Role       @default(user)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   deletedAt     DateTime? // soft delete → hard delete job after 30d (GDPR)
@@ -38,7 +38,7 @@ model Watch {
   enabled      Boolean       @default(true)
   nextRunAt    DateTime
   lastRunAt    DateTime?
-  lastStatus   String?
+  lastStatus   RunStatus?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   runs         Run[]
@@ -53,8 +53,8 @@ model Run {
   id            String         @id @default(cuid())
   watchId       String
   watch         Watch          @relation(fields: [watchId], references: [id], onDelete: Cascade)
-  status        String
-  triggered     String
+  status        RunStatus
+  triggered     RunTrigger
   error         String?
   log           Json // redact headers/secrets before storing
   startedAt     DateTime       @default(now())
@@ -76,14 +76,14 @@ model Snapshot {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String              @id @default(cuid())
   runId     String
-  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
-  channel   String
+  run       Run                 @relation(fields: [runId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
   target    String // for webhooks store host only, not full URL w/ tokens
-  status    String
+  status    NotificationStatus
   error     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime            @default(now())
 
   @@index([runId])
 }
@@ -136,16 +136,19 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
-  sessionToken String   @unique
+  sessionToken String   @id
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -154,4 +157,32 @@ model VerificationToken {
   expires    DateTime
 
   @@id([identifier, token])
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum RunStatus {
+  pending
+  running
+  success
+  failed
+}
+
+enum RunTrigger {
+  schedule
+  manual
+}
+
+enum NotificationChannel {
+  email
+  webhook
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
 }
