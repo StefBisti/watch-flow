@@ -5,10 +5,11 @@
     "turbo": "^2.10.11"
   },
   "scripts": {
+    "dev": "turbo run dev",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "build": "turbo run build",
-    "dev": "turbo run dev"
+    "postinstall": "pnpm --filter @watchflow/db db:generate"
   }
 }
