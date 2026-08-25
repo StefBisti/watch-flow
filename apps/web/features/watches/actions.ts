@@ -11,6 +11,7 @@ import { requireUser } from "@/lib/authz";
 import z from "zod";
 import { prisma } from "@watchflow/db";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 ////////////////////////////////////////////////////////////// create watch
 
@@ -43,7 +44,7 @@ export async function createWatch(
   }
 
   revalidatePath("/watches");
-  return ok(undefined, "Created");
+  redirect("/watches");
 }
 
 ////////////////////////////////////////////////////////////// update watch
@@ -75,7 +76,7 @@ export async function updateWatch(
   }
 
   revalidatePath("/watches");
-  return ok(undefined, "Saved");
+  redirect("/watches");
 }
 
 ////////////////////////////////////////////////////////////// delete watch

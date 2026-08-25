@@ -1,23 +1,27 @@
 "use client";
 
 import { useActionState } from "react";
-import { createWatch, type CreateWatchState } from "../actions";
+import { updateWatch, UpdateWatchState } from "../actions";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export function CreateWatchForm() {
+type Props = { watch: { id: string; name: string; intervalMin: number } };
+
+export function EditWatchForm({ watch }: Props) {
   const [state, formAction, isPending] = useActionState<
-    CreateWatchState,
+    UpdateWatchState,
     FormData
-  >(createWatch, null);
+  >(updateWatch, null);
   const errors = state && !state.ok ? state.fieldErrors : undefined;
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
+    <form action={formAction} className="space-y-4">
+      <input type="hidden" name="id" value={watch.id} />
+
+      <div className="space-y-1">
         <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" required aria-invalid={!!errors?.name} />
+        <Input id="name" name="name" defaultValue={watch.name} required />
         {errors?.name && (
           <p className="text-destructive text-sm">{errors.name[0]}</p>
         )}
@@ -31,9 +35,8 @@ export function CreateWatchForm() {
           type="number"
           min={15}
           max={1440}
-          defaultValue={60}
+          defaultValue={watch.intervalMin}
           required
-          aria-invalid={!!errors?.intervalMin}
         />
         {errors?.intervalMin && (
           <p className="text-destructive text-sm">{errors.intervalMin[0]}</p>
@@ -43,8 +46,9 @@ export function CreateWatchForm() {
       {state && !state.ok && !state.fieldErrors && (
         <p className="text-destructive text-sm">{state.error}</p>
       )}
+
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Creating" : "Create"}
+        {isPending ? "Saving..." : "Save"}
       </Button>
     </form>
   );

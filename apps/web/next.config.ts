@@ -4,7 +4,7 @@ import "./lib/env";
 const nextConfig: NextConfig = {
   /* config options here */
   transpilePackages: ["@watchflow/db"],
-  cacheComponents: true,
+  cacheComponents: false,
   typedRoutes: true,
 };
 
