@@ -12,6 +12,7 @@ import z from "zod";
 import { prisma } from "@watchflow/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { mapPrismaError } from "@/lib/prisma-errors";
 
 ////////////////////////////////////////////////////////////// create watch
 
@@ -22,10 +23,11 @@ export async function createWatch(
   formData: FormData,
 ) {
   const user = await requireUser();
-  const parsed = CreateWatchSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData) as Record<string, string>;
+  const parsed = CreateWatchSchema.safeParse(raw);
   if (!parsed.success) {
     return fail(
-      "Please fix the errors bellow",
+      "Please fix the errors below",
       z.flattenError(parsed.error).fieldErrors,
     );
   }
@@ -39,8 +41,8 @@ export async function createWatch(
         nextRunAt: new Date(Date.now() + parsed.data.intervalMin * 60_000),
       },
     });
-  } catch {
-    return fail("Could not create watch. Try again.");
+  } catch (e) {
+    return fail(mapPrismaError(e));
   }
 
   revalidatePath("/watches");
@@ -56,10 +58,11 @@ export async function updateWatch(
   formData: FormData,
 ) {
   const user = await requireUser();
-  const parsed = UpdateWatchSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData) as Record<string, string>;
+  const parsed = UpdateWatchSchema.safeParse(raw);
   if (!parsed.success) {
     return fail(
-      "Please fix the errors bellow",
+      "Please fix the errors below",
       z.flattenError(parsed.error).fieldErrors,
     );
   }
@@ -68,11 +71,14 @@ export async function updateWatch(
     const { id, ...rest } = parsed.data;
     const { count } = await prisma.watch.updateMany({
       where: { userId: user.id, id: id },
-      data: { ...rest },
+      data: {
+        ...rest,
+        nextRunAt: new Date(Date.now() + parsed.data.intervalMin * 60_000),
+      },
     });
     if (count === 0) return fail("Not found.");
-  } catch {
-    return fail("Could not update watch. Try again.");
+  } catch (e) {
+    return fail(mapPrismaError(e));
   }
 
   revalidatePath("/watches");
@@ -90,8 +96,8 @@ export async function deleteWatch(id: string): Promise<ActionResult> {
       where: { id, userId: user.id },
     });
     if (count === 0) return fail("Not found.");
-  } catch {
-    return fail("Could not delete watch. Try again.");
+  } catch (e) {
+    return fail(mapPrismaError(e));
   }
 
   revalidatePath("/watches");

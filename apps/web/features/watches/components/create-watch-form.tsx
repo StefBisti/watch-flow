@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createWatch, type CreateWatchState } from "../actions";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,22 @@ export function CreateWatchForm() {
     CreateWatchState,
     FormData
   >(createWatch, null);
+  const [name, setName] = useState("");
+  const [intervalMin, setIntervalMin] = useState("60");
   const errors = state && !state.ok ? state.fieldErrors : undefined;
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form action={formAction} className="space-y-4">
       <div className="flex flex-col gap-1">
         <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" required aria-invalid={!!errors?.name} />
+        <Input
+          id="name"
+          name="name"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          aria-invalid={!!errors?.name}
+        />
         {errors?.name && (
           <p className="text-destructive text-sm">{errors.name[0]}</p>
         )}
@@ -31,7 +40,8 @@ export function CreateWatchForm() {
           type="number"
           min={15}
           max={1440}
-          defaultValue={60}
+          value={intervalMin}
+          onChange={(e) => setIntervalMin(e.target.value)}
           required
           aria-invalid={!!errors?.intervalMin}
         />
