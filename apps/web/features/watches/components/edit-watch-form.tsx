@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { updateWatch, UpdateWatchState } from "../actions";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ export function EditWatchForm({ watch }: Props) {
     FormData
   >(updateWatch, null);
   const errors = state && !state.ok ? state.fieldErrors : undefined;
+  const [name, setName] = useState(watch.name);
+  const [intervalMin, setIntervalMin] = useState(String(watch.intervalMin));
 
   return (
     <form action={formAction} className="space-y-4">
@@ -21,7 +23,14 @@ export function EditWatchForm({ watch }: Props) {
 
       <div className="space-y-1">
         <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" defaultValue={watch.name} required />
+        <Input
+          id="name"
+          name="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          aria-invalid={!!errors?.name}
+        />
         {errors?.name && (
           <p className="text-destructive text-sm">{errors.name[0]}</p>
         )}
@@ -33,9 +42,11 @@ export function EditWatchForm({ watch }: Props) {
           id="intervalMin"
           name="intervalMin"
           type="number"
+          value={intervalMin}
+          onChange={(e) => setIntervalMin(e.target.value)}
           min={15}
           max={1440}
-          defaultValue={watch.intervalMin}
+          aria-invalid={!!errors?.intervalMin}
           required
         />
         {errors?.intervalMin && (
