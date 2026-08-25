@@ -10,8 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio",
-    "build": "prisma generate"
+    "db:studio": "prisma studio"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

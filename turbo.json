@@ -3,14 +3,32 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "generated/**"]
+      "env": [
+        "DATABASE_URL",
+        "AUTH_SECRET",
+        "AUTH_GITHUB_ID",
+        "AUTH_GITHUB_SECRET",
+        "AUTH_URL",
+        "NEXT_PUBLIC_APP_URL"
+      ],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
-    "lint": { },
-    "typecheck": { "dependsOn": ["^build"] },
+    "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "env": [
+        "DATABASE_URL",
+        "AUTH_SECRET",
+        "AUTH_GITHUB_ID",
+        "AUTH_GITHUB_SECRET",
+        "AUTH_URL",
+        "NEXT_PUBLIC_APP_URL"
+      ]
+    },
     "test": { "dependsOn": ["^build"] },
     "dev": {
-      "cache":false,
-      "persistent":true
+      "cache": false,
+      "persistent": true
     }
   }
 }
