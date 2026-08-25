@@ -15,6 +15,14 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      # Dummy values
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      AUTH_SECRET: ci-dummy-secret-not-used-anywhere-0000
+      AUTH_GITHUB_ID: ci-dummy-id
+      AUTH_GITHUB_SECRET: ci-dummy-secret
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -39,12 +47,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-        env:
-          # Dummy values: the build never connects to anything, it only has to
-          # satisfy the zod schema in apps/web/lib/env.ts.
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
-          AUTH_SECRET: ci-dummy-secret-not-used-anywhere-0000
-          AUTH_GITHUB_ID: ci-dummy-id
-          AUTH_GITHUB_SECRET: ci-dummy-secret
-          NEXT_PUBLIC_APP_URL: http://localhost:3000
