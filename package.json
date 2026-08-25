@@ -2,6 +2,7 @@
   "private": true,
   "packageManager": "pnpm@11.22.0",
   "devDependencies": {
+    "lefthook": "^2.1.10",
     "turbo": "^2.10.11"
   },
   "scripts": {

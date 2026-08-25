@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-only credentials in .env.example"
+regexes = ['''postgresql://watchflow:watchflow@localhost:5432/watchflow''']
