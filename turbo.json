@@ -12,7 +12,7 @@
         "AUTH_URL",
         "NEXT_PUBLIC_APP_URL"
       ],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "generated/**"]
     },
     "lint": {},
     "typecheck": {
