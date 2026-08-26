@@ -5,13 +5,14 @@
       "dependsOn": ["^build"],
       "env": [
         "DATABASE_URL",
+        "DIRECT_URL",
         "AUTH_SECRET",
         "AUTH_GITHUB_ID",
         "AUTH_GITHUB_SECRET",
         "AUTH_URL",
         "NEXT_PUBLIC_APP_URL"
       ],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "generated/**"]
     },
     "lint": {},
     "typecheck": {
