@@ -10,3 +10,4 @@ Secrets are managed with [Doppler](https://doppler.com) — no `.env` file is us
     doppler run -- pnpm dev
 
 `.env.example` lists the required keys.
+GITHUB_TOKEN=ghp_R8kQz3mVw7pYt2nLxJ4hB6sD9fG1cA0eU5iO
