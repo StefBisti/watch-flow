@@ -1,17 +1,7 @@
 import { z } from "zod";
 import { MAX_EDGES, MAX_NODES } from "./limits.ts";
-
-export const FlowNodeType = z.enum([
-  "http_fetch",
-  "css_selector",
-  "json_path",
-  "regex",
-  "compare_last",
-  "condition",
-  "email",
-  "webhook",
-]);
-export type FlowNodeType = z.infer<typeof FlowNodeType>;
+import { FlowNodeType } from "./nodes/types.ts";
+import { nodeRegistry } from "./nodes/registry.ts";
 
 export const FlowNode = z.object({
   id: z.string().min(1).max(64),
@@ -50,6 +40,16 @@ export const FlowSchema = z
       ids.add(node.id);
     });
     if (duplicated) return;
+
+    // per node config via the registry
+    flow.nodes.forEach((node, i) => {
+      const result = nodeRegistry[node.type].configSchema.safeParse(node.data);
+      if (!result.success) {
+        for (const issue of result.error.issues) {
+          ctx.addIssue({ ...issue, path: ["nodes", i, "data", ...issue.path] });
+        }
+      }
+    });
 
     // no dangling edges
     let dangling = false;
