@@ -124,6 +124,9 @@ importers:
 
   packages/flow:
     dependencies:
+      safe-regex2:
+        specifier: ^5.1.1
+        version: 5.1.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
