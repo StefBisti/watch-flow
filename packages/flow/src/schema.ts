@@ -1,21 +1,64 @@
 import { z } from "zod";
-import { MAX_EDGES, MAX_NODES } from "./limits.ts";
+import { MAX_EDGES, MAX_NODE_ID, MAX_NODES } from "./limits.ts";
 import { FlowNodeType } from "./nodes/types.ts";
-import { nodeRegistry } from "./nodes/registry.ts";
+import {
+  CompareLastConfig,
+  ConditionConfig,
+  CssSelectorConfig,
+  EmailConfig,
+  HttpFetchConfig,
+  JsonPathConfig,
+  RegexConfig,
+  WebhookConfig,
+} from "./nodes/config.ts";
 
-export const FlowNode = z.object({
-  id: z.string().min(1).max(64),
-  type: FlowNodeType,
-  data: z.unknown(),
-  position: z.object({ x: z.number(), y: z.number() }).optional(),
-});
+const NodeId = z
+  .string()
+  .min(1)
+  .max(MAX_NODE_ID)
+  .regex(/^[A-Za-z0-9_-]+$/, "Invalid node id");
+const Position = z.object({ x: z.number(), y: z.number() }).strict();
+
+function nodeVariant<T extends FlowNodeType, S extends z.ZodType>(
+  type: T,
+  data: S,
+) {
+  return z
+    .object({
+      id: NodeId,
+      type: z.literal(type),
+      data,
+      position: Position.optional(),
+    })
+    .strict();
+}
+
+export const FlowNode = z.discriminatedUnion("type", [
+  nodeVariant("http_fetch", HttpFetchConfig),
+  nodeVariant("css_selector", CssSelectorConfig),
+  nodeVariant("json_path", JsonPathConfig),
+  nodeVariant("regex", RegexConfig),
+  nodeVariant("compare_last", CompareLastConfig.default({})),
+  nodeVariant("condition", ConditionConfig),
+  nodeVariant("email", EmailConfig),
+  nodeVariant("webhook", WebhookConfig),
+]);
 export type FlowNode = z.infer<typeof FlowNode>;
 
-export const FlowEdge = z.object({
-  from: z.string().min(1).max(64),
-  to: z.string().min(1).max(64),
-  handle: z.enum(["true", "false"]).optional(),
-});
+const _everyNodeTypeIsCovered: [
+  Exclude<FlowNodeType, FlowNode["type"]>,
+] extends [never]
+  ? true
+  : never = true;
+void _everyNodeTypeIsCovered;
+
+export const FlowEdge = z
+  .object({
+    from: NodeId,
+    to: NodeId,
+    handle: z.enum(["true", "false"]).optional(),
+  })
+  .strict();
 export type FlowEdge = z.infer<typeof FlowEdge>;
 
 export const FlowSchema = z
@@ -24,7 +67,10 @@ export const FlowSchema = z
     nodes: z.array(FlowNode).min(1).max(MAX_NODES),
     edges: z.array(FlowEdge).max(MAX_EDGES),
   })
+  .strict()
   .superRefine((flow, ctx) => {
+    if (flow.nodes.length > MAX_NODES || flow.edges.length > MAX_EDGES) return;
+
     // no duplicate ids
     const ids = new Set<string>();
     let duplicated = false;
@@ -40,16 +86,6 @@ export const FlowSchema = z
       ids.add(node.id);
     });
     if (duplicated) return;
-
-    // per node config via the registry
-    flow.nodes.forEach((node, i) => {
-      const result = nodeRegistry[node.type].configSchema.safeParse(node.data);
-      if (!result.success) {
-        for (const issue of result.error.issues) {
-          ctx.addIssue({ ...issue, path: ["nodes", i, "data", ...issue.path] });
-        }
-      }
-    });
 
     // no dangling edges
     let dangling = false;
@@ -67,10 +103,36 @@ export const FlowSchema = z
     });
     if (dangling) return;
 
+    // no duplicate edges
+    const seenEdges = new Set<string>();
+    let duplicateEdge = false;
+    flow.edges.forEach((edge, i) => {
+      const key = `${edge.from}\u0000${edge.to}\u0000${edge.handle ?? ""}`;
+      if (seenEdges.has(key)) {
+        duplicateEdge = true;
+        ctx.addIssue({
+          code: "custom",
+          message: `Duplicate edge from "${edge.from}" to "${edge.to}"`,
+          path: ["edges", i],
+        });
+      }
+      seenEdges.add(key);
+    });
+    if (duplicateEdge) return;
+
+    const byId = new Map(flow.nodes.map((n) => [n.id, n]));
     const adj = new Map<string, string[]>();
+    const outgoing = new Map<string, typeof flow.edges>();
     const incomingCnt = new Map<string, number>();
     for (const edge of flow.edges) {
-      adj.set(edge.from, [...(adj.get(edge.from) ?? []), edge.to]);
+      const next = adj.get(edge.from);
+      if (next) next.push(edge.to);
+      else adj.set(edge.from, [edge.to]);
+
+      const out = outgoing.get(edge.from);
+      if (out) out.push(edge);
+      else outgoing.set(edge.from, [edge]);
+
       incomingCnt.set(edge.to, (incomingCnt.get(edge.to) ?? 0) + 1);
     }
 
@@ -93,6 +155,38 @@ export const FlowSchema = z
       });
     }
 
+    // handle is present if and only if the source node is a condition, and distinct
+    for (const [fromId, edges] of outgoing) {
+      const isCondition = byId.get(fromId)?.type === "condition";
+      const handles = new Set<string>();
+      for (const edge of edges) {
+        if (!isCondition && edge.handle !== undefined) {
+          ctx.addIssue({
+            code: "custom",
+            message: `Only condition nodes have handles: "${fromId}"`,
+            path: ["edges"],
+          });
+        }
+        if (isCondition) {
+          if (edge.handle === undefined) {
+            ctx.addIssue({
+              code: "custom",
+              message: `Edge out of condition node "${fromId}" needs a true or false handle`,
+              path: ["edges"],
+            });
+          } else if (handles.has(edge.handle)) {
+            ctx.addIssue({
+              code: "custom",
+              message: `Condition node "${fromId}" has two "${edge.handle}" branches`,
+              path: ["edges"],
+            });
+          } else {
+            handles.add(edge.handle);
+          }
+        }
+      }
+    }
+
     // no fan-in
     for (const [id, count] of incomingCnt) {
       if (count > 1) {
@@ -108,6 +202,7 @@ export const FlowSchema = z
     const visited = new Set<string>();
     const inStack = new Set<string>();
     let cyclic = false;
+
     const visit = (id: string): void => {
       if (cyclic || visited.has(id)) return;
       inStack.add(id);
