@@ -69,6 +69,8 @@ export const FlowSchema = z
   })
   .strict()
   .superRefine((flow, ctx) => {
+    if (flow.nodes.length > MAX_NODES || flow.edges.length > MAX_EDGES) return;
+
     // no duplicate ids
     const ids = new Set<string>();
     let duplicated = false;

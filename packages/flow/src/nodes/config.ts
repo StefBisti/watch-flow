@@ -18,6 +18,14 @@ const SafeUrl = z
   .url()
   .max(MAX_URL)
   .superRefine((value, ctx) => {
+    if (/[\x00-\x1F\x7F]/.test(value)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "URLs must not contain control characters",
+      });
+      return;
+    }
+
     const url = URL.parse(value);
     if (!url) return;
 
@@ -94,8 +102,7 @@ export const RegexConfig = z
       });
       return;
     }
-    const hasLookbehind = /\(\?<[=!]/.test(cfg.pattern);
-    if (!hasLookbehind && !safeRegex(cfg.pattern)) {
+    if (!safeRegex(cfg.pattern.replace(/\(\?<[=!]/g, "(?:"))) {
       ctx.addIssue({
         code: "custom",
         message: "Pattern is vulnerable to catastrophic backtracking",
@@ -125,7 +132,7 @@ export const ConditionConfig = z
         path: ["operator"],
       });
     }
-    if (cfg.valueType === "number" && Number.isNaN(Number(cfg.value))) {
+    if (cfg.valueType === "number" && !/^-?\d+(\.\d+)?$/.test(cfg.value)) {
       ctx.addIssue({
         code: "custom",
         message: "value must be numeric",
