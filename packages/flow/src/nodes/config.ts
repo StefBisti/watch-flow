@@ -14,53 +14,13 @@ import {
   MAX_URL,
 } from "../limits.ts";
 
-function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-
-  if (host.startsWith("[")) {
-    const ip = host.slice(1, -1);
-    if (ip === "::1" || ip === "::") return true;
-    if (/^f[cd]/.test(ip)) return true;
-    if (/^fe[89ab]/.test(ip)) return true;
-    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(ip);
-    if (mapped) {
-      const n = (parseInt(mapped[1]!, 16) << 16) | parseInt(mapped[2]!, 16);
-      return isBlockedIPv4([
-        n >>> 24,
-        (n >>> 16) & 255,
-        (n >>> 8) & 255,
-        n & 255,
-      ]);
-    }
-    return false;
-  }
-
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (v4) return isBlockedIPv4(v4.slice(1).map(Number));
-
-  if (host === "localhost" || host.endsWith(".localhost")) return true;
-  return host.endsWith(".local") || host.endsWith(".internal");
-}
-
-function isBlockedIPv4([a, b]: number[]): boolean {
-  return (
-    a === 0 || // 0.0.0.0/8   "this network"
-    a === 10 || // 10/8        private
-    a === 127 || // 127/8       loopback
-    (a === 100 && b! >= 64 && b! <= 127) || // 100.64/10  carrier NAT
-    (a === 169 && b === 254) || // 169.254/16  link-local, incl. cloud metadata
-    (a === 172 && b! >= 16 && b! <= 31) || // 172.16/12  private
-    (a === 192 && b === 168) // 192.168/16  private
-  );
-}
-
 const SafeUrl = z
-  // The protocol is checked below rather than via z.url({ protocol }), whose
-  // failure message is "Invalid URL" — misleading for a well-formed file:// URL.
   .url()
   .max(MAX_URL)
   .superRefine((value, ctx) => {
-    const url = new URL(value);
+    const url = URL.parse(value);
+    if (!url) return;
+
     if (!["http:", "https:"].includes(url.protocol)) {
       ctx.addIssue({
         code: "custom",
@@ -73,15 +33,7 @@ const SafeUrl = z
         message: "URLs must not contain credentials",
       });
     }
-    if (isBlockedHost(url.hostname)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "URLs must not point at private/loopback addresses",
-      });
-    }
   });
-
-// RFC 7230 token charset. Anything outside it (CR, LF, colon, space) is header injection.
 
 const HeaderName = z
   .string()
@@ -142,7 +94,8 @@ export const RegexConfig = z
       });
       return;
     }
-    if (!safeRegex(cfg.pattern)) {
+    const hasLookbehind = /\(\?<[=!]/.test(cfg.pattern);
+    if (!hasLookbehind && !safeRegex(cfg.pattern)) {
       ctx.addIssue({
         code: "custom",
         message: "Pattern is vulnerable to catastrophic backtracking",

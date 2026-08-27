@@ -12,7 +12,11 @@ import {
   WebhookConfig,
 } from "./nodes/config.ts";
 
-const NodeId = z.string().min(1).max(MAX_NODE_ID);
+const NodeId = z
+  .string()
+  .min(1)
+  .max(MAX_NODE_ID)
+  .regex(/^[A-Za-z0-9_-]+$/, "Invalid node id");
 const Position = z.object({ x: z.number(), y: z.number() }).strict();
 
 function nodeVariant<T extends FlowNodeType, S extends z.ZodType>(
@@ -40,6 +44,13 @@ export const FlowNode = z.discriminatedUnion("type", [
   nodeVariant("webhook", WebhookConfig),
 ]);
 export type FlowNode = z.infer<typeof FlowNode>;
+
+const _everyNodeTypeIsCovered: [
+  Exclude<FlowNodeType, FlowNode["type"]>,
+] extends [never]
+  ? true
+  : never = true;
+void _everyNodeTypeIsCovered;
 
 export const FlowEdge = z
   .object({
