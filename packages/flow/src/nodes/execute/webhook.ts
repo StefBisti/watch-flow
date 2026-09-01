@@ -31,11 +31,21 @@ export const webhookNode = defineNode({
       );
     }
 
-    await ctx.fetch({
+    const resp = await ctx.fetch({
       url: config.url,
       method: config.method,
+      headers:
+        config.method === "POST"
+          ? { "content-type": "application/json" }
+          : undefined,
       body: config.method === "POST" ? body : undefined,
     });
+
+    if (resp.status < 200 || resp.status > 299) {
+      throw new Error(
+        `webhook got ${resp.status} from ${new URL(config.url).host}`,
+      );
+    }
 
     return input;
   },

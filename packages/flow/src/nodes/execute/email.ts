@@ -20,15 +20,16 @@ export const emailNode = defineNode({
     const data = parsed.data;
     const params = typeof data === "object" ? data : { value: String(data) };
 
-    const subject = Mustache.render(
-      config.subject,
-      params,
-      {},
-      { escape: (value: unknown) => String(value) },
-    )
-      .replace(/[\r\n]+/g, " ")
-      .trim()
-      .slice(0, MAX_EMAIL_SUBJECT);
+    const subject =
+      Mustache.render(
+        config.subject,
+        params,
+        {},
+        { escape: (value: unknown) => String(value) },
+      )
+        .replace(/[\r\n]+/g, " ")
+        .trim()
+        .slice(0, MAX_EMAIL_SUBJECT) || "WatchFlow alert";
 
     const html = Mustache.render(config.body, params)
       .trim()

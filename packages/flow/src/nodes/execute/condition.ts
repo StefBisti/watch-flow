@@ -1,7 +1,6 @@
 import z from "zod";
 import { ConditionConfig, NUMERIC } from "../config.ts";
 import { defineNode } from "../registry.ts";
-import { assert } from "node:console";
 
 const ConditionInput = z.union([
   z.string(),

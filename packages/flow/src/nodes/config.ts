@@ -1,4 +1,5 @@
 import safeRegex from "safe-regex2";
+import Mustache from "mustache";
 import z from "zod";
 import {
   MAX_CONDITION_FIELD,
@@ -14,8 +15,35 @@ import {
   MAX_URL,
 } from "../limits.ts";
 
+Mustache.templateCache = undefined;
+
 export const NUMERIC = /^-?\d+(\.\d+)?$/;
-export const RAW_TAGS = /\{\{\{|\{\{\s*&/;
+const ALLOWED_TOKENS = new Set(["text", "name"]);
+
+function templateIssue(template: string): string | null {
+  let tokens;
+  try {
+    tokens = Mustache.parse(template);
+  } catch (e) {
+    return e instanceof Error ? e.message : "invalid template";
+  }
+  for (const token of tokens) {
+    if (!ALLOWED_TOKENS.has(token[0])) {
+      return `unsupported template tag "${token[0]}" — only {{name}} is allowed`;
+    }
+  }
+  return null;
+}
+
+const safeTemplate = (min: number) =>
+  z
+    .string()
+    .min(min)
+    .max(MAX_TEMPLATE)
+    .superRefine((value, ctx) => {
+      const issue = templateIssue(value);
+      if (issue) ctx.addIssue({ code: "custom", message: issue });
+    });
 
 const SafeUrl = z
   .url()
@@ -150,34 +178,15 @@ export const ConditionConfig = z
 
 export const EmailConfig = z
   .object({
-    subject: z.string().min(1).max(MAX_TEMPLATE),
-    body: z.string().min(1).max(MAX_TEMPLATE),
+    subject: safeTemplate(1),
+    body: safeTemplate(1),
   })
-  .strict()
-  .superRefine((cfg, ctx) => {
-    if (RAW_TAGS.test(cfg.subject)) {
-      ctx.addIssue({
-        code: "custom",
-        message: `subject must not contain "{{{" or "{{&"`,
-        path: ["subject"],
-      });
-    }
-    if (RAW_TAGS.test(cfg.body)) {
-      ctx.addIssue({
-        code: "custom",
-        message: `body must not contain "{{{" or "{{&"`,
-        path: ["body"],
-      });
-    }
-  });
+  .strict();
 
 export const WebhookConfig = z
   .object({
     url: SafeUrl,
     method: z.enum(["POST", "GET"]),
-    bodyTemplate: z
-      .string()
-      .max(MAX_TEMPLATE)
-      .refine((t) => !RAW_TAGS.test(t), `must not contain "{{{" or "{{&"`),
+    bodyTemplate: safeTemplate(0),
   })
   .strict();

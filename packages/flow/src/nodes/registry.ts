@@ -1,5 +1,5 @@
 import z from "zod";
-import { FlowContext } from "./context.ts";
+import type { FlowContext } from "./context.ts";
 import { FlowNode } from "../schema.ts";
 import { FlowNodeType } from "./types.ts";
 import { httpFetchNode } from "./execute/http-fetch.ts";
