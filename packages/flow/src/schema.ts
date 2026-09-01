@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MAX_EDGES, MAX_NODE_ID, MAX_NODES } from "./limits.ts";
-import { FlowNodeType } from "./nodes/types.ts";
+import type { FlowNodeType } from "./nodes/types.ts";
 import {
   CompareLastConfig,
   ConditionConfig,

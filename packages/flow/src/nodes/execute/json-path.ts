@@ -1,6 +1,6 @@
 import { JSONPath } from "jsonpath-plus";
 import { JsonPathConfig } from "../config.ts";
-import { defineNode } from "../registry.ts";
+import { defineNode } from "../definition.ts";
 import z from "zod";
 import { MAX_NODE_OUTPUT } from "../../limits.ts";
 

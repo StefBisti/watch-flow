@@ -1,6 +1,6 @@
 import z from "zod";
 import { EmailConfig } from "../config.ts";
-import { defineNode } from "../registry.ts";
+import { defineNode } from "../definition.ts";
 import Mustache from "mustache";
 import { MAX_EMAIL_BODY, MAX_EMAIL_SUBJECT } from "../../limits.ts";
 

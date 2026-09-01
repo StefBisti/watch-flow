@@ -1,5 +1,5 @@
 import z from "zod";
-import { defineNode } from "../registry.ts";
+import { defineNode } from "../definition.ts";
 import { CssSelectorConfig } from "../config.ts";
 import * as cheerio from "cheerio";
 import { MAX_NODE_OUTPUT } from "../../limits.ts";

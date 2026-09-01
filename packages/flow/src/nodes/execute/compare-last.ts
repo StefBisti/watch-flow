@@ -1,7 +1,7 @@
 import z from "zod";
 import { CompareLastConfig } from "../config.ts";
-import { defineNode } from "../registry.ts";
 import { MAX_NODE_OUTPUT } from "../../limits.ts";
+import { defineNode } from "../definition.ts";
 
 const CompareLastInput = z.union([z.string(), z.number()]);
 

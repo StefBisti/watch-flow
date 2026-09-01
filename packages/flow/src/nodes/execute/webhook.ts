@@ -1,5 +1,5 @@
 import z from "zod";
-import { defineNode } from "../registry.ts";
+import { defineNode } from "../definition.ts";
 import { WebhookConfig } from "../config.ts";
 import Mustache from "mustache";
 import { MAX_WEBHOOK_BODY } from "../../limits.ts";
@@ -39,6 +39,7 @@ export const webhookNode = defineNode({
           ? { "content-type": "application/json" }
           : undefined,
       body: config.method === "POST" ? body : undefined,
+      signal: ctx.signal,
     });
 
     if (resp.status < 200 || resp.status > 299) {
