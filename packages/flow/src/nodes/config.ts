@@ -14,6 +14,9 @@ import {
   MAX_URL,
 } from "../limits.ts";
 
+export const NUMERIC = /^-?\d+(\.\d+)?$/;
+export const RAW_TAGS = /\{\{\{|\{\{\s*&/;
+
 const SafeUrl = z
   .url()
   .max(MAX_URL)
@@ -74,7 +77,11 @@ const Headers = z
   );
 
 export const HttpFetchConfig = z
-  .object({ url: SafeUrl, headers: Headers.optional() })
+  .object({
+    url: SafeUrl,
+    headers: Headers.optional(),
+    failOnError: z.boolean().default(true),
+  })
   .strict();
 
 export const CssSelectorConfig = z
@@ -115,7 +122,7 @@ export const CompareLastConfig = z.object({}).strict();
 
 export const ConditionConfig = z
   .object({
-    field: z.string().min(1).max(MAX_CONDITION_FIELD),
+    field: z.string().min(1).max(MAX_CONDITION_FIELD).optional(),
     operator: z.enum(["equals", "not_equals", "contains", "gt", "lt"]),
     value: z.string().max(MAX_CONDITION_VALUE),
     valueType: z.enum(["string", "number"]).default("string"),
@@ -132,7 +139,7 @@ export const ConditionConfig = z
         path: ["operator"],
       });
     }
-    if (cfg.valueType === "number" && !/^-?\d+(\.\d+)?$/.test(cfg.value)) {
+    if (cfg.valueType === "number" && !NUMERIC.test(cfg.value)) {
       ctx.addIssue({
         code: "custom",
         message: "value must be numeric",
@@ -146,12 +153,31 @@ export const EmailConfig = z
     subject: z.string().min(1).max(MAX_TEMPLATE),
     body: z.string().min(1).max(MAX_TEMPLATE),
   })
-  .strict();
+  .strict()
+  .superRefine((cfg, ctx) => {
+    if (RAW_TAGS.test(cfg.subject)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `subject must not contain "{{{" or "{{&"`,
+        path: ["subject"],
+      });
+    }
+    if (RAW_TAGS.test(cfg.body)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `body must not contain "{{{" or "{{&"`,
+        path: ["body"],
+      });
+    }
+  });
 
 export const WebhookConfig = z
   .object({
     url: SafeUrl,
     method: z.enum(["POST", "GET"]),
-    bodyTemplate: z.string().max(MAX_TEMPLATE),
+    bodyTemplate: z
+      .string()
+      .max(MAX_TEMPLATE)
+      .refine((t) => !RAW_TAGS.test(t), `must not contain "{{{" or "{{&"`),
   })
   .strict();
