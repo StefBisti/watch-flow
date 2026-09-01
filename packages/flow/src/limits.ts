@@ -8,6 +8,10 @@ export const MAX_JSONPATH = 500;
 export const MAX_TEMPLATE = 2000;
 export const MAX_REGEX = 200;
 export const MAX_REGEX_FLAGS = 8;
+export const MAX_REGEX_INPUT = 256_000;
+export const MAX_EMAIL_SUBJECT = 200;
+export const MAX_EMAIL_BODY = 50_000;
+export const MAX_WEBHOOK_BODY = 20_000;
 
 export const MAX_HEADERS = 20;
 export const MAX_HEADER_NAME = 100;
@@ -15,3 +19,5 @@ export const MAX_HEADER_VALUE = 1000;
 
 export const MAX_CONDITION_FIELD = 100;
 export const MAX_CONDITION_VALUE = 500;
+
+export const MAX_NODE_OUTPUT = 10_000;
