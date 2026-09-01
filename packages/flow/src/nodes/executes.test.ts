@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { FlowContext, FetchResponse, EmailMessage } from "./context.ts";
+import type { FetchResponse, EmailMessage, RegexMatch } from "../io.ts";
 import { httpFetchNode } from "./execute/http-fetch.ts";
 import { cssSelectorNode } from "./execute/css-selector.ts";
 import { jsonPathNode } from "./execute/json-path.ts";
@@ -13,6 +13,7 @@ import {
   MAX_REGEX_INPUT,
   MAX_WEBHOOK_BODY,
 } from "../limits.ts";
+import type { NodeContext } from "./context.ts";
 
 const response = (over: Partial<FetchResponse> = {}): FetchResponse => ({
   status: 200,
@@ -22,9 +23,11 @@ const response = (over: Partial<FetchResponse> = {}): FetchResponse => ({
   ...over,
 });
 
-const ctx = (over: Partial<FlowContext> = {}): FlowContext => ({
+const ctx = (over: Partial<NodeContext> = {}): NodeContext => ({
   fetch: vi.fn(async () => response()),
   sendEmail: vi.fn(async () => {}),
+  matchRegex: async ({ text, pattern, flags }) =>
+    new RegExp(pattern, flags).exec(text) as RegexMatch | null,
   previous: null,
   saveSnapshot: vi.fn(async () => {}),
   signal: AbortSignal.timeout(5_000),

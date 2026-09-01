@@ -1,5 +1,5 @@
 import { HttpFetchConfig } from "../config.ts";
-import { defineNode } from "../registry.ts";
+import { defineNode } from "../definition.ts";
 
 export const httpFetchNode = defineNode({
   configSchema: HttpFetchConfig,
@@ -8,6 +8,7 @@ export const httpFetchNode = defineNode({
       url: config.url,
       headers: config.headers,
       method: "GET",
+      signal: ctx.signal,
     });
 
     if (config.failOnError && (resp.status < 200 || resp.status > 299)) {
