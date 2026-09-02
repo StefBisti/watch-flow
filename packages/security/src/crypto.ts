@@ -4,7 +4,11 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // GCM standard nonce size
 const TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
-const KEY_ID = /^v\d+$/;
+// Bounded so parseMasterKey and decryptSecret agree: a longer keyId would
+// encrypt rows that decryptSecret's separator scan then refuses to read,
+// which is silent permanent data loss.
+const MAX_KEY_ID_LENGTH = 8;
+const KEY_ID = /^v\d{1,7}$/;
 
 export type MasterKey = { keyId: string; key: Buffer };
 
@@ -79,7 +83,7 @@ export function decryptSecret(
 
   const ring = Array.isArray(keys) ? keys : [keys];
   const sep = secret.ciphertext.indexOf(0x3a); // ":"
-  if (sep === -1 || sep > 8) throw fail();
+  if (sep === -1 || sep > MAX_KEY_ID_LENGTH) throw fail();
   const keyId = secret.ciphertext.subarray(0, sep).toString("utf8");
   const master = ring.find((k) => k.keyId === keyId);
   if (!master) throw fail();

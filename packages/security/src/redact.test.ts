@@ -76,3 +76,44 @@ test("over-redacts rather than under-redacts on ambiguous keys", () => {
   // "monkey" contains "key" — fail closed is the documented behaviour
   expect(redact({ monkey: "bananas" })).toEqual({ monkey: "[REDACTED]" });
 });
+
+test("🔒 overlapping secrets: the longest is redacted first", () => {
+  const out = redact({ output: "token=hunter2extra" }, [
+    "hunter2",
+    "hunter2extra",
+  ]);
+  expect(out).toEqual({ output: "token=[REDACTED]" });
+});
+
+test("a shared (non-circular) reference is walked twice, not dropped", () => {
+  const shared = { nodeId: "fetch", status: 200 };
+  expect(redact({ first: shared, second: shared })).toEqual({
+    first: { nodeId: "fetch", status: 200 },
+    second: { nodeId: "fetch", status: 200 },
+  });
+});
+
+test("🔒 an Error keeps its message and stack instead of scrubbing to {}", () => {
+  const out = redact(new Error("boom with hunter2"), ["hunter2"]) as {
+    name: string;
+    message: string;
+    stack: string;
+  };
+  expect(out.name).toBe("Error");
+  expect(out.message).toBe("boom with [REDACTED]");
+  expect(out.stack).toContain("[REDACTED]");
+  expect(out.stack).not.toContain("hunter2");
+});
+
+test("Map and Set become plain data rather than {}", () => {
+  expect(redact({ m: new Map([["a", 1]]), s: new Set([1, 2]) })).toEqual({
+    m: { a: 1 },
+    s: [1, 2],
+  });
+});
+
+test("🔒 a secret used as a KEY name is redacted too", () => {
+  expect(redact({ "s3cr3t-value": "count" }, ["s3cr3t-value"])).toEqual({
+    "[REDACTED]": "count",
+  });
+});

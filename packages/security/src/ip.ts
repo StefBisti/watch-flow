@@ -7,6 +7,7 @@ const BLOCKED_V4: [string, number][] = [
   ["127.0.0.0", 8],
   ["169.254.0.0", 16],
   ["172.16.0.0", 12],
+  ["192.88.99.0", 24], // 6to4 relay anycast
   ["192.168.0.0", 16],
   ["224.0.0.0", 3],
 ];
@@ -97,6 +98,14 @@ function isPublicV6(ip: string): boolean {
   ) {
     return isPublicV4(embeddedV4());
   }
+  // 2002::/16 — 6to4: the embedded IPv4 sits in groups 1-2, and a relay
+  // will forward there. Same embedded-v4 class as the NAT64 branch above.
+  if (g0 === 0x2002) {
+    return isPublicV4(`${g1 >> 8}.${g1 & 0xff}.${g2 >> 8}.${g2 & 0xff}`);
+  }
+  // 2001::/32 — Teredo. The embedded IPv4 is XOR-obfuscated, so rather than
+  // decode it, refuse the whole tunnel range: nothing legitimate to fetch.
+  if (g0 === 0x2001 && g1 === 0) return false;
   // ::/96 legacy space, including :: (unspecified) and ::1 (loopback).
   if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
     return false;

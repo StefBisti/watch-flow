@@ -128,3 +128,16 @@ test("🔒 fails closed on an empty answer", async () => {
   const r = resolver({ "empty.test": [] });
   await rejects("http://empty.test/", r, /did not resolve/);
 });
+
+test("🔒 rejects .localhost subdomains and repeated trailing dots", async () => {
+  // DNS deliberately answers with a public address: these must fail at the
+  // hostname layer, before resolution, exactly like "localhost." does.
+  const open = resolver({
+    "a.localhost": ["93.184.216.34"],
+    "deep.sub.localhost": ["93.184.216.34"],
+    localhost: ["93.184.216.34"],
+  });
+  for (const host of ["a.localhost", "deep.sub.localhost", "localhost.."]) {
+    await rejects(`http://${host}/`, open, /hostname is not allowed/);
+  }
+});

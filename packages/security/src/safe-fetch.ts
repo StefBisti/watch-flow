@@ -39,7 +39,7 @@ export const defaultResolver: Resolver = async (hostname) => {
   return ips;
 };
 
-function pinnedAgent(ips: string[]): Agent {
+function pinnedAgent(ips: string[], timeoutMs: number): Agent {
   return new Agent({
     connect: {
       lookup(_hostname, options, callback) {
@@ -51,10 +51,14 @@ function pinnedAgent(ips: string[]): Agent {
         else callback(null, addrs[0]!.address, addrs[0]!.family);
       },
     },
-    headersTimeout: FETCH_TIMEOUT_MS,
-    bodyTimeout: FETCH_TIMEOUT_MS,
+    // Must track the caller's timeout: undici's own deadlines would
+    // otherwise cap a deliberately raised timeoutMs at the default.
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
   });
 }
+
+const DEFAULT_USER_AGENT = "WatchFlowBot/0.1 (+https://watchflow.dev)";
 
 const STRIPPED_REQUEST_HEADERS = new Set([
   "host",
@@ -101,16 +105,16 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
       AbortSignal.timeout(timeoutMs),
     ]);
 
-    const headers: Record<string, string> = {};
+    const callerHeaders: Record<string, string> = {};
     for (const [name, value] of Object.entries(req.headers ?? {})) {
       if (!STRIPPED_REQUEST_HEADERS.has(name.toLowerCase())) {
-        headers[name.toLowerCase()] = value;
+        callerHeaders[name.toLowerCase()] = value;
       }
     }
-    headers["accept-encoding"] = "gzip";
-    headers["user-agent"] ??= "WatchFlowBot/0.1 (+https://watchflow.dev)";
 
     let url = req.url;
+    let previousOrigin: string | null = null;
+    let dropCallerHeaders = false;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       // 🔒 Re-validated on EVERY hop. A public site 302ing to
@@ -118,7 +122,24 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
       const verdict = await policy(url, resolver);
       if (!verdict.ok) throw new Error(`fetch blocked: ${verdict.reason}`);
 
-      const agent = pinnedAgent(verdict.ips);
+      // 🔒 Caller headers were consented to ONE origin. A watched site can
+      // 302 anywhere public, so re-sending Authorization / X-Api-Key across
+      // an origin change hands the user's credentials to the redirect
+      // target. Drop them all, permanently, once the chain crosses origins
+      // (a scheme downgrade changes the origin too, so https->http is
+      // covered). The flag is sticky: the spec never restores them.
+      if (previousOrigin !== null && verdict.url.origin !== previousOrigin) {
+        dropCallerHeaders = true;
+      }
+      previousOrigin = verdict.url.origin;
+
+      const headers: Record<string, string> = dropCallerHeaders
+        ? {}
+        : { ...callerHeaders };
+      headers["accept-encoding"] = "gzip";
+      headers["user-agent"] ??= DEFAULT_USER_AGENT;
+
+      const agent = pinnedAgent(verdict.ips, timeoutMs);
       try {
         const res = await request(verdict.url, {
           dispatcher: agent,
@@ -148,7 +169,11 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
         }
 
         let source: Readable = res.body;
-        if (respHeaders["content-encoding"] === "gzip") {
+        // Header VALUES are case-insensitive per RFC 9110: a server sending
+        // "GZIP" or "x-gzip" would otherwise skip decompression and hand
+        // back raw deflate bytes decoded as utf8 mojibake.
+        const encoding = respHeaders["content-encoding"]?.toLowerCase();
+        if (encoding === "gzip" || encoding === "x-gzip") {
           const gunzip = createGunzip();
           res.body.on("error", (e) => gunzip.destroy(e));
           source = res.body.pipe(gunzip);
@@ -156,7 +181,11 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
           delete respHeaders["content-length"];
         }
         const { body, truncated } = await readCapped(source);
-        if (truncated) res.body.destroy();
+        if (truncated) {
+          res.body.destroy();
+          // The header would still advertise the full, untruncated size.
+          delete respHeaders["content-length"];
+        }
 
         return {
           status: res.statusCode,

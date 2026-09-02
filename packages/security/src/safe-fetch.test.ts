@@ -178,3 +178,83 @@ test("🔒 a slow server is aborted by the timeout", async () => {
     }),
   ).rejects.toThrow();
 });
+
+/* ------------------------------------------------- redirect credentials --- */
+
+test("🔒 caller headers are DROPPED when a redirect crosses origins", async () => {
+  const collected: Record<string, string | undefined>[] = [];
+  const target = await listen((req, res) => {
+    collected.push({
+      authorization: req.headers["authorization"],
+      "x-api-key": req.headers["x-api-key"] as string | undefined,
+    });
+    if (req.url === "/start") {
+      // same host, DIFFERENT port => different origin
+      res.writeHead(302, { location: `http://other.test:${target}/end` });
+      res.end();
+    } else res.end("done");
+  });
+
+  const res = await fetchWith()({
+    url: `http://watch.test:${target}/start`,
+    method: "GET",
+    headers: { Authorization: "Bearer SECRET", "X-Api-Key": "KEY123" },
+  });
+
+  expect(res.body).toBe("done");
+  expect(collected[0]).toEqual({
+    authorization: "Bearer SECRET",
+    "x-api-key": "KEY123",
+  });
+  expect(collected[1]).toEqual({
+    authorization: undefined,
+    "x-api-key": undefined,
+  });
+});
+
+test("caller headers survive a SAME-origin redirect", async () => {
+  const seen: (string | undefined)[] = [];
+  const port = await listen((req, res) => {
+    seen.push(req.headers["authorization"]);
+    if (req.url === "/start") {
+      res.writeHead(302, { location: "/end" });
+      res.end();
+    } else res.end("done");
+  });
+  await fetchWith()({
+    url: `http://watch.test:${port}/start`,
+    method: "GET",
+    headers: { Authorization: "Bearer SECRET" },
+  });
+  expect(seen).toEqual(["Bearer SECRET", "Bearer SECRET"]);
+});
+
+// A scheme downgrade needs no separate test: the rule compares URL.origin,
+// which includes the scheme, so https -> http is an origin change by
+// construction — same code path as the cross-origin test above.
+
+/* ------------------------------------------------------ header handling --- */
+
+test("🔒 decompresses when content-encoding is uppercase GZIP", async () => {
+  const port = await listen((_req, res) => {
+    res.setHeader("content-encoding", "GZIP");
+    res.end(gzipSync(Buffer.from("hello gzip")));
+  });
+  const res = await fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" });
+  expect(res.body).toBe("hello gzip");
+  expect(res.headers["content-encoding"]).toBeUndefined();
+});
+
+test("a truncated response drops its stale content-length", async () => {
+  const port = await listen((_req, res) => {
+    res.end(Buffer.alloc(MAX_RESPONSE_BYTES + 50_000, "a"));
+  });
+  const res = await fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" });
+  expect(res.truncated).toBe(true);
+  expect(res.headers["content-length"]).toBeUndefined();
+});
+
+// timeoutMs reaching pinnedAgent's headersTimeout/bodyTimeout is deliberately
+// untested: the AbortSignal is set to the same value, so it always wins the
+// race, and the only way to observe the agent's own deadline is a server that
+// stalls for longer than the 10s default. Not worth 11 seconds on every CI run.
