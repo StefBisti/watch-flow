@@ -83,3 +83,20 @@ test("parseMasterKey rejects bad formats and bad lengths", () => {
     expect(() => parseMasterKey(bad)).toThrow();
   }
 });
+
+test("🔒 parseMasterKey rejects a keyId decryptSecret could never read", () => {
+  // Silent permanent data loss: encryptSecret would happily write rows that
+  // decryptSecret's separator bound then refuses.
+  expect(() =>
+    parseMasterKey(`v10000000:${randomBytes(32).toString("base64")}`),
+  ).toThrow();
+});
+
+test("🔒 encryptSecret refuses a keyId decryptSecret could never read", () => {
+  // MasterKey is exported, so a hand-built one must not bypass the bound.
+  for (const keyId of ["v1:beta", "v123456789", "beta", ""]) {
+    expect(() => encryptSecret("payload", { keyId, key: master.key })).toThrow(
+      /invalid key id/,
+    );
+  }
+});

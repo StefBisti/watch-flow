@@ -128,3 +128,28 @@ test("🔒 fails closed on an empty answer", async () => {
   const r = resolver({ "empty.test": [] });
   await rejects("http://empty.test/", r, /did not resolve/);
 });
+
+test("🔒 rejects .localhost subdomains and repeated trailing dots", async () => {
+  // DNS deliberately answers with a public address: these must fail at the
+  // hostname layer, before resolution, exactly like "localhost." does.
+  const open = resolver({
+    "a.localhost": ["93.184.216.34"],
+    "deep.sub.localhost": ["93.184.216.34"],
+    localhost: ["93.184.216.34"],
+  });
+  for (const host of ["a.localhost", "deep.sub.localhost", "localhost.."]) {
+    await rejects(`http://${host}/`, open, /hostname is not allowed/);
+  }
+});
+
+test("the verdict URL has its trailing dots stripped too", async () => {
+  // safeFetch compares url.origin across redirect hops; a dot left on the
+  // hostname makes a same-host redirect look cross-origin.
+  const r = resolver({ "example.com": ["93.184.216.34"] });
+  const res = await checkUrl("https://example.com./page", r);
+  expect(res.ok).toBe(true);
+  if (res.ok) {
+    expect(res.url.hostname).toBe("example.com");
+    expect(res.url.origin).toBe("https://example.com");
+  }
+});

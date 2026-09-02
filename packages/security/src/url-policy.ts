@@ -11,7 +11,9 @@ export type UrlPolicyResult =
 const fail = (reason: string): UrlPolicyResult => ({ ok: false, reason });
 
 const BLOCKED_HOSTNAMES = new Set(["localhost", "metadata.google.internal"]);
-const BLOCKED_SUFFIXES = [".local", ".internal"];
+// ".localhost" is RFC 6761 reserved and resolves to loopback in most
+// resolvers, so "a.localhost" belongs here next to "localhost" itself.
+const BLOCKED_SUFFIXES = [".local", ".internal", ".localhost"];
 
 export async function checkUrl(
   raw: string,
@@ -31,8 +33,15 @@ export async function checkUrl(
     return fail(`port ${url.port} is not allowed`);
   }
 
+  // Strip EVERY trailing dot ("localhost.." must reach the denylist too) and
+  // write it back onto the URL, so the verdict URL, the outgoing Host header
+  // and safeFetch's origin comparison all agree with the name we actually
+  // denylisted and resolved. Leaving the dot on url.hostname made a same-host
+  // redirect look cross-origin and dropped the caller's credentials.
+  if (/\.+$/.test(url.hostname)) {
+    url.hostname = url.hostname.replace(/\.+$/, "");
+  }
   let hostname = url.hostname;
-  if (hostname.endsWith(".")) hostname = hostname.slice(0, -1);
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     hostname = hostname.slice(1, -1);
   }

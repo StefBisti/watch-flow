@@ -1,6 +1,6 @@
 import { Agent, request } from "undici";
 import { resolve4, resolve6 } from "node:dns/promises";
-import { createGunzip } from "node:zlib";
+import { createUnzip } from "node:zlib";
 import { isIP } from "node:net";
 import type { Readable } from "node:stream";
 import { checkUrl, type Resolver, type UrlPolicyResult } from "./url-policy.ts";
@@ -39,7 +39,7 @@ export const defaultResolver: Resolver = async (hostname) => {
   return ips;
 };
 
-function pinnedAgent(ips: string[]): Agent {
+function pinnedAgent(ips: string[], timeoutMs: number): Agent {
   return new Agent({
     connect: {
       lookup(_hostname, options, callback) {
@@ -51,10 +51,19 @@ function pinnedAgent(ips: string[]): Agent {
         else callback(null, addrs[0]!.address, addrs[0]!.family);
       },
     },
-    headersTimeout: FETCH_TIMEOUT_MS,
-    bodyTimeout: FETCH_TIMEOUT_MS,
+    // Must track the caller's timeout: undici's own deadlines would
+    // otherwise cap a deliberately raised timeoutMs at the default.
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
   });
 }
+
+const DEFAULT_USER_AGENT = "WatchFlowBot/0.1 (+https://watchflow.dev)";
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/** gzip and zlib-wrapped deflate; createUnzip sniffs which one it got. */
+const DECODABLE_ENCODINGS = new Set(["gzip", "x-gzip", "deflate"]);
 
 const STRIPPED_REQUEST_HEADERS = new Set([
   "host",
@@ -101,16 +110,16 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
       AbortSignal.timeout(timeoutMs),
     ]);
 
-    const headers: Record<string, string> = {};
+    const callerHeaders: Record<string, string> = {};
     for (const [name, value] of Object.entries(req.headers ?? {})) {
       if (!STRIPPED_REQUEST_HEADERS.has(name.toLowerCase())) {
-        headers[name.toLowerCase()] = value;
+        callerHeaders[name.toLowerCase()] = value;
       }
     }
-    headers["accept-encoding"] = "gzip";
-    headers["user-agent"] ??= "WatchFlowBot/0.1 (+https://watchflow.dev)";
 
     let url = req.url;
+    let previousOrigin: string | null = null;
+    let dropCallerHeaders = false;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       // 🔒 Re-validated on EVERY hop. A public site 302ing to
@@ -118,7 +127,24 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
       const verdict = await policy(url, resolver);
       if (!verdict.ok) throw new Error(`fetch blocked: ${verdict.reason}`);
 
-      const agent = pinnedAgent(verdict.ips);
+      // 🔒 Caller headers were consented to ONE origin. A watched site can
+      // 302 anywhere public, so re-sending Authorization / X-Api-Key across
+      // an origin change hands the user's credentials to the redirect
+      // target. Drop them all, permanently, once the chain crosses origins
+      // (a scheme downgrade changes the origin too, so https->http is
+      // covered). The flag is sticky: the spec never restores them.
+      if (previousOrigin !== null && verdict.url.origin !== previousOrigin) {
+        dropCallerHeaders = true;
+      }
+      previousOrigin = verdict.url.origin;
+
+      const headers: Record<string, string> = dropCallerHeaders
+        ? {}
+        : { ...callerHeaders };
+      headers["accept-encoding"] = "gzip";
+      headers["user-agent"] ??= DEFAULT_USER_AGENT;
+
+      const agent = pinnedAgent(verdict.ips, timeoutMs);
       try {
         const res = await request(verdict.url, {
           dispatcher: agent,
@@ -128,15 +154,21 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
           signal,
         });
 
-        const location = res.headers["location"];
-        if (
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          typeof location === "string" &&
-          req.method === "GET"
-        ) {
+        // Only the actual redirect statuses: 304 Not Modified is also 3xx but
+        // is a legitimate final answer with no Location.
+        if (REDIRECT_STATUSES.has(res.statusCode) && req.method === "GET") {
+          const location = res.headers["location"];
           await res.body.dump(); // release the connection
-          url = new URL(location, verdict.url).href;
+          // A duplicated Location header arrives as an array, and the value
+          // may not parse. Both are broken servers — treat them as a blocked
+          // fetch rather than letting a raw TypeError escape, or silently
+          // returning the 3xx with an empty body as if it were content.
+          const next =
+            typeof location === "string"
+              ? URL.parse(location, verdict.url)
+              : null;
+          if (!next) throw new Error("fetch blocked: unusable redirect target");
+          url = next.href;
           continue;
         }
 
@@ -148,15 +180,36 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
         }
 
         let source: Readable = res.body;
-        if (respHeaders["content-encoding"] === "gzip") {
-          const gunzip = createGunzip();
-          res.body.on("error", (e) => gunzip.destroy(e));
-          source = res.body.pipe(gunzip);
+        // content-encoding is a comma-separated coding LIST, and its values
+        // are case-insensitive (RFC 9110). Comparing the whole header against
+        // "gzip" would skip decompression for "GZIP", "identity, gzip" or a
+        // trailing space, handing the caller compressed bytes decoded as utf8
+        // mojibake — which then reads as "the page changed" on every run.
+        const codings = (respHeaders["content-encoding"] ?? "")
+          .split(",")
+          .map((coding) => coding.trim().toLowerCase())
+          .filter((coding) => coding !== "" && coding !== "identity");
+        if (codings.length > 0) {
+          // We only ever ask for gzip, so anything else is a misbehaving
+          // server. Fail loudly rather than return binary garbage as text.
+          if (codings.length > 1 || !DECODABLE_ENCODINGS.has(codings[0]!)) {
+            await res.body.dump();
+            throw new Error(
+              `fetch blocked: unsupported content-encoding "${respHeaders["content-encoding"]}"`,
+            );
+          }
+          const unzip = createUnzip();
+          res.body.on("error", (e) => unzip.destroy(e));
+          source = res.body.pipe(unzip);
           delete respHeaders["content-encoding"];
           delete respHeaders["content-length"];
         }
         const { body, truncated } = await readCapped(source);
-        if (truncated) res.body.destroy();
+        if (truncated) {
+          res.body.destroy();
+          // The header would still advertise the full, untruncated size.
+          delete respHeaders["content-length"];
+        }
 
         return {
           status: res.statusCode,

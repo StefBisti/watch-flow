@@ -69,3 +69,18 @@ for (const ip of BLOCKED) {
 for (const ip of GARBAGE) {
   test(`fails closed on ${ip}`, () => expect(isPublicIp(ip)).toBe(false));
 }
+
+test("🔒 blocks 6to4 addresses embedding a private IPv4", () => {
+  expect(isPublicIp("2002:a00:1::1")).toBe(false); // 10.0.0.1
+  expect(isPublicIp("2002:7f00:1::1")).toBe(false); // 127.0.0.1
+  expect(isPublicIp("2002:a9fe:a9fe::1")).toBe(false); // 169.254.169.254
+});
+
+test("6to4 embedding a public IPv4 is still allowed", () => {
+  expect(isPublicIp("2002:5db8:d822::1")).toBe(true); // 93.184.216.34
+});
+
+test("🔒 blocks the Teredo range and the 6to4 relay anycast prefix", () => {
+  expect(isPublicIp("2001:0:53aa:64c:1:2:3:4")).toBe(false);
+  expect(isPublicIp("192.88.99.1")).toBe(false);
+});
