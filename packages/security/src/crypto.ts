@@ -8,7 +8,9 @@ const KEY_LENGTH = 32;
 // encrypt rows that decryptSecret's separator scan then refuses to read,
 // which is silent permanent data loss.
 const MAX_KEY_ID_LENGTH = 8;
-const KEY_ID = /^v\d{1,7}$/;
+// Derived, not hand-counted: one "v" plus the remaining budget in digits, so
+// widening the bound cannot leave the regex and the separator scan disagreeing.
+const KEY_ID = new RegExp(`^v\\d{1,${MAX_KEY_ID_LENGTH - 1}}$`);
 
 export type MasterKey = { keyId: string; key: Buffer };
 
@@ -47,6 +49,13 @@ export function encryptSecret(
   master: MasterKey,
   aad?: string,
 ): EncryptedSecret {
+  // Enforced at the WRITE side too, not only in parseMasterKey: MasterKey is
+  // exported, so a test fixture or a future KMS loader could hand us a keyId
+  // decryptSecret's separator scan will never accept — rows that encrypt
+  // cleanly and are then permanently unreadable.
+  if (!KEY_ID.test(master.keyId)) {
+    throw new Error(`invalid key id: ${master.keyId}`);
+  }
   // Fresh random IV per encryption. GCM with a reused key+IV pair leaks
   // the XOR of plaintexts AND allows tag forgery — never derive, never reuse.
   const iv = randomBytes(IV_LENGTH);

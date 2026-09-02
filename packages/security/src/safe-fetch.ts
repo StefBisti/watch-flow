@@ -1,6 +1,6 @@
 import { Agent, request } from "undici";
 import { resolve4, resolve6 } from "node:dns/promises";
-import { createGunzip } from "node:zlib";
+import { createUnzip } from "node:zlib";
 import { isIP } from "node:net";
 import type { Readable } from "node:stream";
 import { checkUrl, type Resolver, type UrlPolicyResult } from "./url-policy.ts";
@@ -59,6 +59,11 @@ function pinnedAgent(ips: string[], timeoutMs: number): Agent {
 }
 
 const DEFAULT_USER_AGENT = "WatchFlowBot/0.1 (+https://watchflow.dev)";
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/** gzip and zlib-wrapped deflate; createUnzip sniffs which one it got. */
+const DECODABLE_ENCODINGS = new Set(["gzip", "x-gzip", "deflate"]);
 
 const STRIPPED_REQUEST_HEADERS = new Set([
   "host",
@@ -149,15 +154,21 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
           signal,
         });
 
-        const location = res.headers["location"];
-        if (
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          typeof location === "string" &&
-          req.method === "GET"
-        ) {
+        // Only the actual redirect statuses: 304 Not Modified is also 3xx but
+        // is a legitimate final answer with no Location.
+        if (REDIRECT_STATUSES.has(res.statusCode) && req.method === "GET") {
+          const location = res.headers["location"];
           await res.body.dump(); // release the connection
-          url = new URL(location, verdict.url).href;
+          // A duplicated Location header arrives as an array, and the value
+          // may not parse. Both are broken servers — treat them as a blocked
+          // fetch rather than letting a raw TypeError escape, or silently
+          // returning the 3xx with an empty body as if it were content.
+          const next =
+            typeof location === "string"
+              ? URL.parse(location, verdict.url)
+              : null;
+          if (!next) throw new Error("fetch blocked: unusable redirect target");
+          url = next.href;
           continue;
         }
 
@@ -169,14 +180,27 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
         }
 
         let source: Readable = res.body;
-        // Header VALUES are case-insensitive per RFC 9110: a server sending
-        // "GZIP" or "x-gzip" would otherwise skip decompression and hand
-        // back raw deflate bytes decoded as utf8 mojibake.
-        const encoding = respHeaders["content-encoding"]?.toLowerCase();
-        if (encoding === "gzip" || encoding === "x-gzip") {
-          const gunzip = createGunzip();
-          res.body.on("error", (e) => gunzip.destroy(e));
-          source = res.body.pipe(gunzip);
+        // content-encoding is a comma-separated coding LIST, and its values
+        // are case-insensitive (RFC 9110). Comparing the whole header against
+        // "gzip" would skip decompression for "GZIP", "identity, gzip" or a
+        // trailing space, handing the caller compressed bytes decoded as utf8
+        // mojibake — which then reads as "the page changed" on every run.
+        const codings = (respHeaders["content-encoding"] ?? "")
+          .split(",")
+          .map((coding) => coding.trim().toLowerCase())
+          .filter((coding) => coding !== "" && coding !== "identity");
+        if (codings.length > 0) {
+          // We only ever ask for gzip, so anything else is a misbehaving
+          // server. Fail loudly rather than return binary garbage as text.
+          if (codings.length > 1 || !DECODABLE_ENCODINGS.has(codings[0]!)) {
+            await res.body.dump();
+            throw new Error(
+              `fetch blocked: unsupported content-encoding "${respHeaders["content-encoding"]}"`,
+            );
+          }
+          const unzip = createUnzip();
+          res.body.on("error", (e) => unzip.destroy(e));
+          source = res.body.pipe(unzip);
           delete respHeaders["content-encoding"];
           delete respHeaders["content-length"];
         }

@@ -141,3 +141,15 @@ test("🔒 rejects .localhost subdomains and repeated trailing dots", async () =
     await rejects(`http://${host}/`, open, /hostname is not allowed/);
   }
 });
+
+test("the verdict URL has its trailing dots stripped too", async () => {
+  // safeFetch compares url.origin across redirect hops; a dot left on the
+  // hostname makes a same-host redirect look cross-origin.
+  const r = resolver({ "example.com": ["93.184.216.34"] });
+  const res = await checkUrl("https://example.com./page", r);
+  expect(res.ok).toBe(true);
+  if (res.ok) {
+    expect(res.url.hostname).toBe("example.com");
+    expect(res.url.origin).toBe("https://example.com");
+  }
+});

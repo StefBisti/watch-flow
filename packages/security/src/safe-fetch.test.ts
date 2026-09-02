@@ -258,3 +258,49 @@ test("a truncated response drops its stale content-length", async () => {
 // untested: the AbortSignal is set to the same value, so it always wins the
 // race, and the only way to observe the agent's own deadline is a server that
 // stalls for longer than the 10s default. Not worth 11 seconds on every CI run.
+
+test("🔒 a redirect with an unusable Location is a blocked fetch, not a crash", async () => {
+  for (const location of ["http://", "http://[bad"]) {
+    const port = await listen((_req, res) => {
+      res.writeHead(302, { location });
+      res.end();
+    });
+    await expect(
+      fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" }),
+    ).rejects.toThrow(/fetch blocked: unusable redirect target/);
+  }
+});
+
+test("a 304 is a final answer, not a redirect missing its Location", async () => {
+  const port = await listen((_req, res) => {
+    res.writeHead(304);
+    res.end();
+  });
+  const res = await fetchWith()({
+    url: `http://watch.test:${port}/`,
+    method: "GET",
+  });
+  expect(res.status).toBe(304);
+});
+
+test("🔒 decompresses a comma-separated coding list", async () => {
+  const port = await listen((_req, res) => {
+    res.setHeader("content-encoding", "identity, GZIP");
+    res.end(gzipSync(Buffer.from("hello list")));
+  });
+  const res = await fetchWith()({
+    url: `http://watch.test:${port}/`,
+    method: "GET",
+  });
+  expect(res.body).toBe("hello list");
+});
+
+test("🔒 refuses an encoding it cannot decode rather than returning garbage", async () => {
+  const port = await listen((_req, res) => {
+    res.setHeader("content-encoding", "br");
+    res.end(Buffer.from([0x1b, 0x2e, 0x00]));
+  });
+  await expect(
+    fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" }),
+  ).rejects.toThrow(/unsupported content-encoding/);
+});

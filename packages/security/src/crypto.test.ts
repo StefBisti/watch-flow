@@ -91,3 +91,12 @@ test("🔒 parseMasterKey rejects a keyId decryptSecret could never read", () =>
     parseMasterKey(`v10000000:${randomBytes(32).toString("base64")}`),
   ).toThrow();
 });
+
+test("🔒 encryptSecret refuses a keyId decryptSecret could never read", () => {
+  // MasterKey is exported, so a hand-built one must not bypass the bound.
+  for (const keyId of ["v1:beta", "v123456789", "beta", ""]) {
+    expect(() => encryptSecret("payload", { keyId, key: master.key })).toThrow(
+      /invalid key id/,
+    );
+  }
+});

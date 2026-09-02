@@ -112,8 +112,67 @@ test("Map and Set become plain data rather than {}", () => {
   });
 });
 
+test("a Map with non-string keys keeps every entry as a pair", () => {
+  // Object.fromEntries would coerce both keys to "[object Object]"
+  const m = new Map<object, string>([
+    [{ id: 1 }, "x"],
+    [{ id: 2 }, "y"],
+  ]);
+  expect(redact({ m })).toEqual({
+    m: [
+      [{ id: 1 }, "x"],
+      [{ id: 2 }, "y"],
+    ],
+  });
+});
+
 test("🔒 a secret used as a KEY name is redacted too", () => {
   expect(redact({ "s3cr3t-value": "count" }, ["s3cr3t-value"])).toEqual({
     "[REDACTED]": "count",
   });
+});
+
+test("🔒 an Error keeps its own enumerable properties too", () => {
+  const err = Object.assign(new Error("connect failed"), {
+    code: "ECONNREFUSED",
+    statusCode: 503,
+  });
+  expect(redact(err)).toMatchObject({
+    name: "Error",
+    message: "connect failed",
+    code: "ECONNREFUSED",
+    statusCode: 503,
+  });
+});
+
+test("🔒 a __proto__ key is kept as data, not swallowed by the setter", () => {
+  const input = JSON.parse('{"__proto__":{"polluted":1},"a":2}') as object;
+  const out = redact(input) as Record<string, unknown>;
+  expect(Object.hasOwn(out, "__proto__")).toBe(true);
+  expect(out["a"]).toBe(2);
+  expect((Object.prototype as Record<string, unknown>)["polluted"]).toBeUndefined();
+});
+
+test("two keys that scrub to the same name both survive", () => {
+  const out = redact({ "a-hunter2": "first", "a-hunter2extra": "second" }, [
+    "hunter2",
+    "hunter2extra",
+  ]) as Record<string, unknown>;
+  expect(Object.values(out).sort()).toEqual(["first", "second"]);
+});
+
+test("a shared subtree is not re-walked exponentially", () => {
+  // 25 levels of two-way sharing: 2^25 walks without the memo.
+  let node: unknown = { leaf: 1 };
+  for (let i = 0; i < 25; i++) node = { a: node, b: node };
+  const started = Date.now();
+  redact(node);
+  expect(Date.now() - started).toBeLessThan(1_000);
+});
+
+test("caps runaway nesting instead of blowing the stack", () => {
+  let deep: unknown = "bottom";
+  for (let i = 0; i < 5_000; i++) deep = [deep];
+  expect(() => redact(deep)).not.toThrow();
+  expect(JSON.stringify(redact(deep))).toContain("[TRUNCATED]");
 });

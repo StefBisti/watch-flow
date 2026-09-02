@@ -74,7 +74,9 @@ function isPublicV6(ip: string): boolean {
     number,
     number,
   ];
-  const embeddedV4 = () => `${g6 >> 8}.${g6 & 0xff}.${g7 >> 8}.${g7 & 0xff}`;
+  /** Two 16-bit groups back to the dotted IPv4 they carry. */
+  const embeddedV4 = (hi: number, lo: number) =>
+    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
 
   // ::ffff:a.b.c.d — IPv4-mapped: the classification of the embedded IPv4 is the answer
   if (
@@ -85,7 +87,7 @@ function isPublicV6(ip: string): boolean {
     g4 === 0 &&
     g5 === 0xffff
   ) {
-    return isPublicV4(embeddedV4());
+    return isPublicV4(embeddedV4(g6, g7));
   }
   // 64:ff9b::/96 — NAT64: same trick via a translation gateway.
   if (
@@ -96,13 +98,12 @@ function isPublicV6(ip: string): boolean {
     g4 === 0 &&
     g5 === 0
   ) {
-    return isPublicV4(embeddedV4());
+    return isPublicV4(embeddedV4(g6, g7));
   }
   // 2002::/16 — 6to4: the embedded IPv4 sits in groups 1-2, and a relay
-  // will forward there. Same embedded-v4 class as the NAT64 branch above.
-  if (g0 === 0x2002) {
-    return isPublicV4(`${g1 >> 8}.${g1 & 0xff}.${g2 >> 8}.${g2 & 0xff}`);
-  }
+  // will forward there. Same embedded-v4 class as the NAT64 branch above,
+  // so it goes through the same extractor.
+  if (g0 === 0x2002) return isPublicV4(embeddedV4(g1, g2));
   // 2001::/32 — Teredo. The embedded IPv4 is XOR-obfuscated, so rather than
   // decode it, refuse the whole tunnel range: nothing legitimate to fetch.
   if (g0 === 0x2001 && g1 === 0) return false;
