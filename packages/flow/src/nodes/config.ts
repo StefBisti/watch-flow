@@ -46,7 +46,7 @@ const safeTemplate = (min: number) =>
     });
 
 const SafeUrl = z
-  .url()
+  .string()
   .max(MAX_URL)
   .superRefine((value, ctx) => {
     if (/[\x00-\x1F\x7F]/.test(value)) {
@@ -58,7 +58,10 @@ const SafeUrl = z
     }
 
     const url = URL.parse(value);
-    if (!url) return;
+    if (!url) {
+      ctx.addIssue({ code: "custom", message: "Not a valid URL" });
+      return;
+    }
 
     if (!["http:", "https:"].includes(url.protocol)) {
       ctx.addIssue({
