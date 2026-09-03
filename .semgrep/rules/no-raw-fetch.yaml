@@ -1,0 +1,22 @@
+rules:
+  - id: no-raw-fetch
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      Raw fetch is banned outside packages/security.
+      Use safeFetch (SSRF checks + DNS pinning + size caps).
+    pattern-either:
+      - pattern: fetch(...) # does not match ctx.fetch()
+      - pattern: globalThis.fetch(...)
+      - pattern: import "undici" # matches everything - default, named, namespace etc.
+      - pattern: import("undici") # mathces await import("undici")
+      - pattern: import "axios"
+      - pattern: import("axios")
+      - pattern: import "node:http"
+      - pattern: import("node:http")
+      - pattern: import "node:https"
+      - pattern: import("node:https")
+
+    paths:
+      exclude:
+        - "/packages/security/**"
