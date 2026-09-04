@@ -111,6 +111,9 @@ importers:
       '@types/node':
         specifier: ^26.4.0
         version: 26.4.0
+      '@watchflow/flow':
+        specifier: workspace:*
+        version: link:../flow
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
