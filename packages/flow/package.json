@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@watchflow/security": "workspace:*",
     "cheerio": "^1.2.0",
     "jsonpath-plus": "^10.4.0",
     "mustache": "^4.2.0",

@@ -1,7 +1,7 @@
 import z from "zod";
 import { EmailConfig } from "../config.ts";
 import { defineNode } from "../definition.ts";
-import Mustache from "mustache";
+import { renderTemplate } from "@watchflow/security";
 import { MAX_EMAIL_BODY, MAX_EMAIL_SUBJECT } from "../../limits.ts";
 
 const EmailInput = z.union([
@@ -21,17 +21,12 @@ export const emailNode = defineNode({
     const params = typeof data === "object" ? data : { value: String(data) };
 
     const subject =
-      Mustache.render(
-        config.subject,
-        params,
-        {},
-        { escape: (value: unknown) => String(value) },
-      )
-        .replace(/[\r\n]+/g, " ")
+      renderTemplate(config.subject, params, "text")
+        .replace(/\s+/g, " ")
         .trim()
         .slice(0, MAX_EMAIL_SUBJECT) || "WatchFlow alert";
 
-    const html = Mustache.render(config.body, params)
+    const html = renderTemplate(config.body, params, "html")
       .trim()
       .slice(0, MAX_EMAIL_BODY);
 

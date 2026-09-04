@@ -1,7 +1,7 @@
 import z from "zod";
 import { defineNode } from "../definition.ts";
+import { renderTemplate } from "@watchflow/security";
 import { WebhookConfig } from "../config.ts";
-import Mustache from "mustache";
 import { MAX_WEBHOOK_BODY } from "../../limits.ts";
 
 const WebhookInput = z.union([
@@ -9,10 +9,6 @@ const WebhookInput = z.union([
   z.number(),
   z.record(z.string(), z.unknown()),
 ]);
-
-const jsonEscape = {
-  escape: (value: unknown) => JSON.stringify(String(value)).slice(1, -1),
-};
 
 export const webhookNode = defineNode({
   configSchema: WebhookConfig,
@@ -24,7 +20,7 @@ export const webhookNode = defineNode({
     const data = parsed.data;
     const params = typeof data === "object" ? data : { value: String(data) };
 
-    const body = Mustache.render(config.bodyTemplate, params, {}, jsonEscape);
+    const body = renderTemplate(config.bodyTemplate, params, "json");
     if (body.length > MAX_WEBHOOK_BODY) {
       throw new Error(
         `webhook body is ${body.length} characters, over the ${MAX_WEBHOOK_BODY} limit`,
