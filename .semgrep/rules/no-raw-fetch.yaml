@@ -16,6 +16,8 @@ rules:
       - pattern: import("node:http")
       - pattern: import "node:https"
       - pattern: import("node:https")
+      - pattern: import "mustache"
+      - pattern: import("mustache")
 
     paths:
       exclude:
