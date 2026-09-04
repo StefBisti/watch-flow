@@ -71,12 +71,12 @@ model Run {
 model Snapshot {
   id        String   @id @default(cuid())
   watchId   String
+  nodeId    String
   watch     Watch    @relation(fields: [watchId], references: [id], onDelete: Cascade)
   value     String // truncated at 10 KB
-  hash      String
   createdAt DateTime @default(now())
 
-  @@index([watchId, createdAt])
+  @@index([watchId, nodeId, createdAt])
 }
 
 model Notification {
