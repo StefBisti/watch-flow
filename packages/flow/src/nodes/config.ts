@@ -1,6 +1,6 @@
 import safeRegex from "safe-regex2";
-import Mustache from "mustache";
 import z from "zod";
+import { templateError } from "@watchflow/security";
 import {
   MAX_CONDITION_FIELD,
   MAX_CONDITION_VALUE,
@@ -15,25 +15,7 @@ import {
   MAX_URL,
 } from "../limits.ts";
 
-Mustache.templateCache = undefined;
-
 export const NUMERIC = /^-?\d+(\.\d+)?$/;
-const ALLOWED_TOKENS = new Set(["text", "name"]);
-
-function templateIssue(template: string): string | null {
-  let tokens;
-  try {
-    tokens = Mustache.parse(template);
-  } catch (e) {
-    return e instanceof Error ? e.message : "invalid template";
-  }
-  for (const token of tokens) {
-    if (!ALLOWED_TOKENS.has(token[0])) {
-      return `unsupported template tag "${token[0]}" — only {{name}} is allowed`;
-    }
-  }
-  return null;
-}
 
 const safeTemplate = (min: number) =>
   z
@@ -41,7 +23,7 @@ const safeTemplate = (min: number) =>
     .min(min)
     .max(MAX_TEMPLATE)
     .superRefine((value, ctx) => {
-      const issue = templateIssue(value);
+      const issue = templateError(value);
       if (issue) ctx.addIssue({ code: "custom", message: issue });
     });
 

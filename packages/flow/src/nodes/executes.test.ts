@@ -8,6 +8,7 @@ import { conditionNode } from "./execute/condition.ts";
 import { emailNode } from "./execute/email.ts";
 import { webhookNode } from "./execute/webhook.ts";
 import { compareLastNode } from "./execute/compare-last.ts";
+import { MAX_TEMPLATE_VALUE } from "@watchflow/security";
 import {
   MAX_NODE_OUTPUT,
   MAX_REGEX_INPUT,
@@ -335,10 +336,17 @@ test("🔒 webhook JSON-escapes interpolated values", async () => {
 });
 
 test("webhook refuses an oversized rendered body", async () => {
+  // renderTemplate caps each value, so the body has to grow across many tags
+  // rather than from one huge value.
+  const tags = Math.ceil(MAX_WEBHOOK_BODY / MAX_TEMPLATE_VALUE) + 1;
   await expect(
     webhookNode.execute(
-      "a".repeat(MAX_WEBHOOK_BODY + 1),
-      { url: "https://a.test/h", method: "POST", bodyTemplate: "{{value}}" },
+      "a".repeat(MAX_TEMPLATE_VALUE),
+      {
+        url: "https://a.test/h",
+        method: "POST",
+        bodyTemplate: `"${"{{value}}".repeat(tags)}"`,
+      },
       ctx(),
     ),
   ).rejects.toThrow(/over the/);
