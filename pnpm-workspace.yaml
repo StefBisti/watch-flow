@@ -5,6 +5,7 @@ allowBuilds:
   "@prisma/engines": true
   esbuild: true
   lefthook: true
+  msgpackr-extract: false
   prisma: true
   sharp: false
   unrs-resolver: false
