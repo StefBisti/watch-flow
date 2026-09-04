@@ -1,0 +1,15 @@
+rules:
+  - id: no-raw-template
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      Template rendering is banned outside packages/security.
+      Use renderTemplate (escape-by-default per sink + value caps
+      + no sections, partials or raw {{{ }}} output).
+    pattern-either:
+      - pattern: import "mustache" # matches default, named, namespace and require
+      - pattern: import("mustache") # matches await import("mustache")
+
+    paths:
+      exclude:
+        - "/packages/security/**"

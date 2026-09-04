@@ -71,15 +71,18 @@ const escapers: Record<TemplateMode, (raw: string) => string> = {
   json: (raw) => JSON.stringify(raw).slice(1, -1),
 };
 
-/*
-The values a template interpolates come from a fetched page: a 2MB response
-body is a legal node output. A 2000-character template holds ~400 tags, so an
-uncapped renderer turns 2MB of scraped HTML into ~800MB in the worker's heap.
-Capping each value first bounds the output before it is ever built.
- */
 function stringify(value: unknown): string {
   if (value === null || value === undefined) return "";
-  const s = typeof value === "string" ? value : String(value);
+  let s: string;
+  if (typeof value === "object") {
+    try {
+      s = JSON.stringify(value) ?? "";
+    } catch {
+      return ""; // circular
+    }
+  } else {
+    s = String(value);
+  }
   return s.length > MAX_TEMPLATE_VALUE ? s.slice(0, MAX_TEMPLATE_VALUE) : s;
 }
 
@@ -90,17 +93,32 @@ Mustache CALLS any function it resolves to. Rebuilding the view on a null
 prototype removes the chain, and dropping functions removes lambda
 invocation, so a tag can only ever reach data the previous node produced.
 
+Arrays are rebuilt element by element rather than passed through: an array
+handed back untouched keeps Array.prototype, and a function sitting in one is
+still invoked as a lambda by {{arr.0}}. Functions become undefined instead of
+being filtered out, because filtering would shift indices and silently point
+{{arr.2}} at a different element.
+
 Depth is capped because the view is JSON parsed from a watched site.
  */
+function sanitize(value: unknown, depth: number): unknown {
+  if (typeof value === "function" || typeof value === "symbol") return undefined;
+  if (Array.isArray(value)) {
+    return depth >= MAX_TEMPLATE_DEPTH
+      ? []
+      : value.map((item) => sanitize(item, depth + 1));
+  }
+  if (value !== null && typeof value === "object") {
+    return toView(value as Record<string, unknown>, depth + 1);
+  }
+  return value;
+}
+
 function toView(values: Record<string, unknown>, depth = 0): object {
   const out: Record<string, unknown> = Object.create(null);
   if (depth >= MAX_TEMPLATE_DEPTH) return out;
   for (const [key, value] of Object.entries(values)) {
-    if (typeof value === "function" || typeof value === "symbol") continue;
-    out[key] =
-      value !== null && typeof value === "object" && !Array.isArray(value)
-        ? toView(value as Record<string, unknown>, depth + 1)
-        : value;
+    out[key] = sanitize(value, depth);
   }
   return out;
 }
@@ -120,9 +138,14 @@ export function renderTemplate(
   if (issue) throw new Error(`template rejected: ${issue}`);
 
   const escape = escapers[mode];
-  const rendered = Mustache.render(template, toView(values), {}, {
-    escape: (value: unknown) => escape(stringify(value)),
-  });
+  const rendered = Mustache.render(
+    template,
+    toView(values),
+    {},
+    {
+      escape: (value: unknown) => escape(stringify(value)),
+    },
+  );
 
   if (rendered.length > MAX_RENDERED_OUTPUT) {
     throw new Error(

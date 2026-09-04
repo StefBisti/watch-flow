@@ -60,6 +60,34 @@ describe("renderTemplate — html", () => {
   });
 });
 
+describe("renderTemplate — object values", () => {
+  // toView rebuilds nested objects on a null prototype, which has no
+  // toString, so String() on one throws. A json_path node returning an object
+  // into {{value}} is ordinary input and must not kill the node.
+  it("renders an object value instead of throwing", () => {
+    expect(renderTemplate("{{a}}", { a: { b: 1 } }, "text")).toBe('{"b":1}');
+  });
+
+  it("renders an array value instead of throwing", () => {
+    expect(renderTemplate("{{a}}", { a: [1, 2] }, "text")).toBe("[1,2]");
+  });
+
+  it("escapes a rendered object for its sink", () => {
+    const out = renderTemplate('{"m":"{{a}}"}', { a: { b: "x" } }, "json");
+    expect(JSON.parse(out)).toEqual({ m: '{"b":"x"}' });
+  });
+
+  // The depth cap in toView severs the cycle before JSON.stringify sees it,
+  // so a circular value renders truncated rather than throwing.
+  it("renders a circular value truncated rather than throwing", () => {
+    const a: Record<string, unknown> = {};
+    a.self = a;
+    const out = renderTemplate("{{a}}", { a }, "text");
+    expect(() => JSON.parse(out)).not.toThrow();
+    expect(out).toContain('"self"');
+  });
+});
+
 describe("renderTemplate — text", () => {
   it("strips CR and LF so a value cannot inject an email header", () => {
     const out = renderTemplate(
@@ -131,6 +159,22 @@ describe("renderTemplate — view hardening", () => {
   it("never invokes a value as a lambda", () => {
     const values = { f: () => "CALLED" } as unknown as Record<string, unknown>;
     expect(renderTemplate("[{{f}}]", values, "text")).toBe("[]");
+  });
+
+  it("never invokes a value sitting inside an array", () => {
+    const values = { arr: [() => "CALLED"] } as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(renderTemplate("[{{arr.0}}]", values, "text")).toBe("[]");
+  });
+
+  it("keeps array indices stable when an element is dropped", () => {
+    const values = { arr: [() => "CALLED", "second"] } as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(renderTemplate("[{{arr.1}}]", values, "text")).toBe("[second]");
   });
 
   it("still resolves real nested data", () => {
