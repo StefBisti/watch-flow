@@ -19,4 +19,24 @@ worker.on("failed", (job, err) => {
   console.log("job failed", job?.id, err);
 });
 
-await queue.add("run", { watchId: "seed-watch-stef" });
+let shuttingDown = false;
+
+async function shutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n${signal} received, closing`);
+
+  try {
+    await worker.close();
+    console.log("worker closed");
+    await queue.close();
+    console.log("queue closed");
+  } catch (err) {
+    console.log("shutdown failed", err);
+    process.exitCode = 1;
+  }
+}
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, shutdown);
+}
