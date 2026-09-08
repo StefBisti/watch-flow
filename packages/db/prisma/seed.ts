@@ -41,13 +41,13 @@ const flow = FlowSchema.parse(rawFlow);
 
 async function main() {
   const user = await prisma.user.upsert({
-    where: { email: "dev@watchflow.local" },
+    where: { email: "stefbisti@gmail.com" },
     update: {
       name: "Dev User",
       role: "admin",
     },
     create: {
-      email: "dev@watchflow.local",
+      email: "stefbisti@gmail.com",
       name: "Dev User",
       role: "admin",
     },

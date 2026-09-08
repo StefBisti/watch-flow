@@ -8,14 +8,14 @@ import {
   RunResult,
 } from "@watchflow/flow";
 import { createSafeFetch, redact } from "@watchflow/security";
+import { Resend } from "resend";
+import { env } from "./env.ts";
 
 const MAX_SNAPSHOT_CHARS = 10_000;
 
-const safeFetch = createSafeFetch();
+const resend = new Resend(env.RESEND_API_KEY);
 
-const sendEmail = async (msg: EmailMessage) => {
-  console.log(msg.subject, msg.html);
-};
+const safeFetch = createSafeFetch();
 
 const commitSnapshots = async (
   snapshots: Record<string, string>,
@@ -28,6 +28,16 @@ const commitSnapshots = async (
       value: value.slice(0, MAX_SNAPSHOT_CHARS),
     })),
   });
+};
+
+const sendEmail = async (msg: EmailMessage, email: string) => {
+  const { error } = await resend.emails.send({
+    from: env.EMAIL_FROM,
+    to: email,
+    subject: msg.subject,
+    html: msg.html,
+  });
+  if (error) throw new Error(`resend: ${error.message}`);
 };
 
 const matchRegex = async (req: RegexRequest) => {
@@ -47,13 +57,17 @@ async function prevSnaphots(watchId: string): Promise<Record<string, string>> {
 export async function runWatch(runId: string) {
   const run = await prisma.run.findUnique({
     where: { id: runId },
-    select: { watch: { select: { flow: true, id: true } } },
+    select: {
+      watch: {
+        select: { flow: true, id: true, user: { select: { email: true } } },
+      },
+    },
   });
   if (run === null) return;
 
   const ctx: RunContext = {
     fetch: safeFetch,
-    sendEmail,
+    sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
     matchRegex,
     snapshots: await prevSnaphots(run.watch.id),
     commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
