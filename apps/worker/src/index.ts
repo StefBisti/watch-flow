@@ -1,6 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { env } from "./env.ts";
 import { prisma } from "@watchflow/db";
+import { runWatch } from "./run-watch.ts";
 
 /////////////////////////////////////////////////////////////// queue & worker
 
@@ -12,14 +13,7 @@ const queue = new Queue<WatchJob>("watch-runs", { connection });
 
 const worker = new Worker<WatchJob>(
   "watch-runs",
-  async (job) => {
-    console.log("processing", job.id, job.data);
-    const runId = job.data.runId;
-    await prisma.run.update({
-      where: { id: runId },
-      data: { status: "success", endedAt: new Date() },
-    });
-  },
+  async (job) => await runWatch(job.data.runId),
   { connection, concurrency: 5 },
 );
 
