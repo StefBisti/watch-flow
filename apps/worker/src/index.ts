@@ -2,7 +2,9 @@ import { Queue, Worker } from "bullmq";
 import { env } from "./env.ts";
 import { prisma } from "@watchflow/db";
 
-type WatchJob = { watchId: string };
+/////////////////////////////////////////////////////////////// queue & worker
+
+type WatchJob = { runId: string };
 
 const connection = { url: env.REDIS_URL };
 
@@ -12,6 +14,11 @@ const worker = new Worker<WatchJob>(
   "watch-runs",
   async (job) => {
     console.log("processing", job.id, job.data);
+    const runId = job.data.runId;
+    await prisma.run.update({
+      where: { id: runId },
+      data: { status: "success", endedAt: new Date() },
+    });
   },
   { connection, concurrency: 5 },
 );
@@ -25,19 +32,41 @@ worker.on("failed", (job, err) => {
 const fetchWatches = () =>
   prisma.watch.findMany({
     where: { enabled: true, nextRunAt: { lte: new Date() } },
-    select: { id: true },
+    select: { id: true, intervalMin: true },
   });
 
 async function tick() {
   try {
     const watches = await fetchWatches();
     console.log(watches);
+
+    for (const w of watches) {
+      await prisma.watch.update({
+        where: { id: w.id },
+        data: {
+          nextRunAt: new Date(Date.now() + w.intervalMin * 60 * 1000),
+        },
+      });
+
+      const run = await prisma.run.create({
+        data: {
+          watchId: w.id,
+          status: "pending",
+          triggered: "schedule",
+          log: [],
+        },
+      });
+
+      await queue.add("run", { runId: run.id }, { jobId: run.id });
+    }
   } catch (err) {
     console.log(err);
   }
 }
 const tickerId = setInterval(tick, 60_000);
 tick();
+
+/////////////////////////////////////////////////////////////// shutdown
 
 let shuttingDown = false;
 
