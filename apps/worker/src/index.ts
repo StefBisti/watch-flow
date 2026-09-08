@@ -12,8 +12,7 @@ const connection = { url: env.REDIS_URL };
 const queue = new Queue<WatchJob>("watch-runs", {
   connection,
   defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 5_000 },
+    attempts: 1,
     removeOnComplete: { count: 100 },
     removeOnFail: { count: 1_000 },
   },
@@ -45,7 +44,7 @@ worker.on("failed", (job, err) => {
 const fetchWatches = () =>
   prisma.watch.findMany({
     where: { enabled: true, nextRunAt: { lte: new Date() } },
-    select: { id: true, intervalMin: true },
+    select: { id: true, intervalMin: true, nextRunAt: true },
   });
 
 let ticking = false;
@@ -57,26 +56,30 @@ async function tick() {
     const watches = await fetchWatches();
 
     for (const w of watches) {
-      await prisma.watch.update({
-        where: { id: w.id },
-        data: {
-          nextRunAt: new Date(Date.now() + w.intervalMin * 60 * 1000),
-        },
-      });
+      try {
+        const { count } = await prisma.watch.updateMany({
+          where: { id: w.id, nextRunAt: w.nextRunAt },
+          data: {
+            nextRunAt: new Date(Date.now() + w.intervalMin * 60 * 1000),
+          },
+        });
+        if (count === 0) continue;
 
-      const run = await prisma.run.create({
-        data: {
-          watchId: w.id,
-          status: "pending",
-          triggered: "schedule",
-          log: [],
-        },
-      });
-
-      await queue.add("run", { runId: run.id }, { jobId: run.id });
+        const run = await prisma.run.create({
+          data: {
+            watchId: w.id,
+            status: "pending",
+            triggered: "schedule",
+            log: [],
+          },
+        });
+        await queue.add("run", { runId: run.id }, { jobId: run.id });
+      } catch (err) {
+        console.error("could not enqueue watch", w.id, err);
+      }
     }
   } catch (err) {
-    console.log(err);
+    console.error("scheduler tick failed", err);
   } finally {
     ticking = false;
   }

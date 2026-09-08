@@ -12,6 +12,7 @@ import { Resend } from "resend";
 import { env } from "./env.ts";
 
 const MAX_SNAPSHOT_CHARS = 10_000;
+const RUN_TIMEOUT_MS = 60_000;
 
 const resend = new Resend(env.RESEND_API_KEY);
 
@@ -65,13 +66,19 @@ export async function runWatch(runId: string) {
   });
   if (run === null) return;
 
+  await prisma.run.update({
+    where: { id: runId },
+    data: { status: "running" },
+  });
+
   const ctx: RunContext = {
     fetch: safeFetch,
     sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
     matchRegex,
     snapshots: await prevSnaphots(run.watch.id),
     commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
+    runTimeoutMs: RUN_TIMEOUT_MS,
     now: () => new Date(),
   };
 
@@ -87,13 +94,17 @@ export async function runWatch(runId: string) {
     };
   }
   const status = result.status === "ok" ? "success" : "failed";
+  const error =
+    result.error ??
+    result.log.find((e) => e.status === "failed")?.error ??
+    null;
 
   await prisma.$transaction([
     prisma.run.update({
       where: { id: runId },
       data: {
         status,
-        error: result.error ?? null,
+        error: error,
         endedAt: new Date(),
         log: redact(result.log) as Prisma.InputJsonValue,
       },
