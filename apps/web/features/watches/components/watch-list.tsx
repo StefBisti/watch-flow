@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { DeleteWatchButton } from "./delete-watch-button";
+import { RunWatchButton } from "./run-watch-button";
 
 type Watch = Awaited<ReturnType<typeof listWatches>>[number];
 
@@ -30,7 +31,7 @@ export function WatchList({ watches }: { watches: Watch[] }) {
           <TableHead>Interval</TableHead>
           <TableHead>Enabled</TableHead>
           <TableHead>Last status</TableHead>
-          <TableHead className="w-32"></TableHead>
+          <TableHead className="w-56"></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -41,6 +42,7 @@ export function WatchList({ watches }: { watches: Watch[] }) {
             <TableCell>{w.enabled ? "Yes" : "No"}</TableCell>
             <TableCell>{w.lastStatus ?? "-"}</TableCell>
             <TableCell className="flex gap-2">
+              <RunWatchButton id={w.id} />
               <Button
                 variant="ghost"
                 size="sm"
