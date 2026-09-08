@@ -13,6 +13,7 @@ import { prisma } from "@watchflow/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { mapPrismaError } from "@/lib/prisma-errors";
+import { watchRunsQueue } from "@/lib/queue";
 
 ////////////////////////////////////////////////////////////// create watch
 
@@ -103,4 +104,69 @@ export async function deleteWatch(id: string): Promise<ActionResult> {
   revalidatePath("/watches");
 
   return ok(undefined, "Watch deleted");
+}
+
+////////////////////////////////////////////////////////////// run watch now
+
+const ENQUEUE_TIMEOUT_MS = 5_000;
+
+export async function runWatchNow(
+  watchId: string,
+): Promise<ActionResult<{ runId: string }>> {
+  const user = await requireUser();
+  if (!z.string().min(1).max(64).safeParse(watchId).success)
+    return fail("Invalid id");
+
+  const watch = await prisma.watch.findFirst({
+    where: { id: watchId, userId: user.id },
+    select: { id: true },
+  });
+  if (!watch) return fail("Not found.");
+
+  const inFlight = await prisma.run.findFirst({
+    where: { watchId: watchId, status: { in: ["pending", "running"] } },
+    select: { id: true },
+  });
+  if (inFlight) return ok({ runId: inFlight.id }, "Already running");
+
+  let run: { id: string };
+  try {
+    run = await prisma.run.create({
+      data: {
+        watchId: watch.id,
+        status: "pending",
+        triggered: "manual",
+        log: [],
+      },
+      select: { id: true },
+    });
+  } catch (e) {
+    return fail(mapPrismaError(e));
+  }
+
+  try {
+    await Promise.race([
+      watchRunsQueue().add("run", { runId: run.id }, { jobId: run.id }),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("enqueue timed out")),
+          ENQUEUE_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+  } catch (e) {
+    console.error("could not enqueue run", run.id, e);
+    await prisma.run
+      .update({
+        where: { id: run.id },
+        data: {
+          status: "failed",
+          error: "coult not queue the run",
+          endedAt: new Date(),
+        },
+      })
+      .catch(() => {});
+    return fail("Could not start the run. Please try again");
+  }
+  return ok({ runId: run.id });
 }

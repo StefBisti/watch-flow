@@ -24,6 +24,7 @@ jobs:
       AUTH_GITHUB_ID: ci-dummy-id
       AUTH_GITHUB_SECRET: ci-dummy-secret
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
