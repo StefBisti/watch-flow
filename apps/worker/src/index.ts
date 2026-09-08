@@ -9,7 +9,15 @@ type WatchJob = { runId: string };
 
 const connection = { url: env.REDIS_URL };
 
-const queue = new Queue<WatchJob>("watch-runs", { connection });
+const queue = new Queue<WatchJob>("watch-runs", {
+  connection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5_000 },
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 1_000 },
+  },
+});
 
 const worker = new Worker<WatchJob>(
   "watch-runs",
@@ -18,7 +26,18 @@ const worker = new Worker<WatchJob>(
 );
 
 worker.on("failed", (job, err) => {
-  console.log("job failed", job?.id, err);
+  console.error("job failed", job?.id, err);
+
+  if (!job) return;
+
+  if (job.attemptsMade < (job.opts.attempts ?? 1)) return;
+
+  void prisma.run
+    .update({
+      where: { id: job.data.runId },
+      data: { status: "failed", error: "worker error", endedAt: new Date() },
+    })
+    .catch((e) => console.error("could not mark run failed", job.id, e));
 });
 
 /////////////////////////////////////////////////////////////// ticker
@@ -29,10 +48,13 @@ const fetchWatches = () =>
     select: { id: true, intervalMin: true },
   });
 
+let ticking = false;
 async function tick() {
+  if (ticking) return;
+  ticking = true;
+
   try {
     const watches = await fetchWatches();
-    console.log(watches);
 
     for (const w of watches) {
       await prisma.watch.update({
@@ -55,6 +77,8 @@ async function tick() {
     }
   } catch (err) {
     console.log(err);
+  } finally {
+    ticking = false;
   }
 }
 const tickerId = setInterval(tick, 60_000);
