@@ -1,5 +1,6 @@
 import { Queue, Worker } from "bullmq";
 import { env } from "./env.ts";
+import { prisma } from "@watchflow/db";
 
 type WatchJob = { watchId: string };
 
@@ -19,6 +20,25 @@ worker.on("failed", (job, err) => {
   console.log("job failed", job?.id, err);
 });
 
+/////////////////////////////////////////////////////////////// ticker
+
+const fetchWatches = () =>
+  prisma.watch.findMany({
+    where: { enabled: true, nextRunAt: { lte: new Date() } },
+    select: { id: true },
+  });
+
+async function tick() {
+  try {
+    const watches = await fetchWatches();
+    console.log(watches);
+  } catch (err) {
+    console.log(err);
+  }
+}
+const tickerId = setInterval(tick, 60_000);
+tick();
+
 let shuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals) {
@@ -27,10 +47,12 @@ async function shutdown(signal: NodeJS.Signals) {
   console.log(`\n${signal} received, closing`);
 
   try {
+    clearInterval(tickerId);
     await worker.close();
-    console.log("worker closed");
+    console.log("Worker closed");
     await queue.close();
-    console.log("queue closed");
+    console.log("Queue closed");
+    await prisma.$disconnect();
   } catch (err) {
     console.log("shutdown failed", err);
     process.exitCode = 1;
