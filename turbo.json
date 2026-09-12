@@ -13,7 +13,8 @@
         "NEXT_PUBLIC_APP_URL",
         "REDIS_URL",
         "RESEND_API_KEY",
-        "EMAIL_FROM"
+        "EMAIL_FROM",
+        "SECRETS_MASTER_KEY"
       ],
       "outputs": [".next/**", "!.next/cache/**", "dist/**", "generated/**"]
     },
@@ -29,7 +30,8 @@
         "NEXT_PUBLIC_APP_URL",
         "REDIS_URL",
         "RESEND_API_KEY",
-        "EMAIL_FROM"
+        "EMAIL_FROM",
+        "SECRETS_MASTER_KEY"
       ]
     },
     "test": { "dependsOn": ["^build"] },
@@ -46,7 +48,8 @@
         "NEXT_PUBLIC_APP_URL",
         "REDIS_URL",
         "RESEND_API_KEY",
-        "EMAIL_FROM"
+        "EMAIL_FROM",
+        "SECRETS_MASTER_KEY"
       ]
     }
   }

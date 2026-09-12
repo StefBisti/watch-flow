@@ -8,6 +8,7 @@ const schema = z.object({
   NEXT_PUBLIC_APP_URL: z.url(),
   AUTH_URL: z.url().optional(),
   REDIS_URL: z.url(),
+  SECRETS_MASTER_KEY: z.string().min(1),
 });
 
 export const env = schema.parse(process.env);
