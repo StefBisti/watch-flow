@@ -22,6 +22,12 @@ import { allowHost } from "./host-limit.ts";
 const MAX_SNAPSHOT_CHARS = 10_000;
 const RUN_TIMEOUT_MS = 60_000;
 
+// A run may wait for a busy host, but not forever. Past this it is recorded
+// as failed, so a host saturated by other watches can't keep it bouncing
+// between running and pending — and it always resolves well inside the
+// 15-minute minimum interval, before the scheduler comes back to this watch.
+const MAX_DEFER_MS = 5 * 60_000;
+
 const resend = new Resend(env.RESEND_API_KEY);
 
 const safeFetch = createSafeFetch({ allowHost });
@@ -94,6 +100,7 @@ export async function runWatch(runId: string): Promise<boolean> {
   const run = await prisma.run.findUnique({
     where: { id: runId },
     select: {
+      startedAt: true,
       watch: {
         select: { flow: true, id: true, user: { select: { email: true } } },
       },
@@ -158,7 +165,7 @@ export async function runWatch(runId: string): Promise<boolean> {
     };
   }
 
-  if (deferred) {
+  if (deferred && Date.now() - run.startedAt.getTime() < MAX_DEFER_MS) {
     // Back in the queue: nothing ran, so there is nothing to record yet.
     await prisma.run.update({
       where: { id: runId },
