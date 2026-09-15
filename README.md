@@ -17,11 +17,17 @@ Build a graph flow (fetch -> extract -> compare -> ... -> notify) run it on the 
 
 ## Local development
 
-Secrets are managed with [Doppler](https://doppler.com) — no `.env` file is used.
+Secrets are managed with [Doppler](https://doppler.com), no `.env` file is used.
 
-    doppler login
-    doppler setup            # project: watchflow, config: dev
-    docker compose up -d
-    doppler run -- pnpm dev
+```bash
+  doppler login
+  doppler setup            # project: watchflow, config: dev
+  docker compose up -d
+  doppler run -- pnpm --filter @watchflow/db db:migrate
+  docker exec -it watchflow-postgres psql -U watchflow -d watchflow -c "ALTER ROLE wf_web LOGIN PASSWORD 'wf_web_local'" -c "ALTER ROLE wf_worker LOGIN PASSWORD 'wf_worker_local'"
+  doppler run -- pnpm dev
+```
 
-`.env.example` lists the required keys.
+Each process connects as its own Postgres role: the web app as `wf_web`, the worker as
+`wf_worker`, and the Prisma CLI as the table owner (`DIRECT_URL`). The web role can store
+secrets but has no `SELECT` on their ciphertext. Grants live in the `add_app_roles` migration.
