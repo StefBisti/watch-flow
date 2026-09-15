@@ -13,16 +13,18 @@ import {
   parseMasterKey,
   redact,
   withSecrets,
+  RateLimitedError,
 } from "@watchflow/security";
 import { Resend } from "resend";
 import { env } from "./env.ts";
+import { allowHost } from "./host-limit.ts";
 
 const MAX_SNAPSHOT_CHARS = 10_000;
 const RUN_TIMEOUT_MS = 60_000;
 
 const resend = new Resend(env.RESEND_API_KEY);
 
-const safeFetch = createSafeFetch();
+const safeFetch = createSafeFetch({ allowHost });
 
 // Parsed once at boot: a malformed key crashes the worker on start, not mid-run.
 const masterKey = parseMasterKey(env.SECRETS_MASTER_KEY);
@@ -83,7 +85,12 @@ async function loadSecrets(watchId: string): Promise<Record<string, string>> {
   );
 }
 
-export async function runWatch(runId: string) {
+/**
+ * Runs one watch. Returns true when the run was DEFERRED: its first request
+ * hit a host's rate limit, nothing has happened yet, and the job should be
+ * retried in a later window instead of being recorded as a failure.
+ */
+export async function runWatch(runId: string): Promise<boolean> {
   const run = await prisma.run.findUnique({
     where: { id: runId },
     select: {
@@ -92,12 +99,31 @@ export async function runWatch(runId: string) {
       },
     },
   });
-  if (run === null) return;
+  if (run === null) return false;
 
   await prisma.run.update({
     where: { id: runId },
     data: { status: "running" },
   });
+
+  // 🔒 Only a limit hit on the FIRST request is safe to retry: that request
+  // is always the source http_fetch, a GET that runs before any email or
+  // webhook. A limit hit later may come after an email already went out, and
+  // a retry would send it twice — so that case fails like any other error.
+  let completedRequests = 0;
+  let deferred = false;
+  const countingFetch: typeof safeFetch = async (req) => {
+    try {
+      const res = await safeFetch(req);
+      completedRequests++;
+      return res;
+    } catch (e) {
+      if (e instanceof RateLimitedError && completedRequests === 0) {
+        deferred = true;
+      }
+      throw e;
+    }
+  };
 
   // Declared outside the try: the final redact needs it even when the try
   // threw before secrets were loaded (it then stays empty, which is correct —
@@ -112,7 +138,7 @@ export async function runWatch(runId: string) {
     secretValues = Object.values(secrets);
 
     const ctx: RunContext = {
-      fetch: withSecrets(safeFetch, secrets),
+      fetch: withSecrets(countingFetch, secrets),
       sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
       matchRegex,
       snapshots: await prevSnaphots(run.watch.id),
@@ -131,6 +157,16 @@ export async function runWatch(runId: string) {
       error: e instanceof Error ? e.message : String(e),
     };
   }
+
+  if (deferred) {
+    // Back in the queue: nothing ran, so there is nothing to record yet.
+    await prisma.run.update({
+      where: { id: runId },
+      data: { status: "pending" },
+    });
+    return true;
+  }
+
   const status = result.status === "ok" ? "success" : "failed";
   const error =
     result.error ??
@@ -153,4 +189,5 @@ export async function runWatch(runId: string) {
       data: { lastRunAt: new Date(), lastStatus: status },
     }),
   ]);
+  return false;
 }
