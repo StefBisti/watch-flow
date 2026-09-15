@@ -94,27 +94,34 @@ export async function runWatch(runId: string) {
   });
   if (run === null) return;
 
-  const secrets = await loadSecrets(run.watch.id);
-  const secretValues = Object.values(secrets);
-
   await prisma.run.update({
     where: { id: runId },
     data: { status: "running" },
   });
 
-  const ctx: RunContext = {
-    fetch: withSecrets(safeFetch, secrets),
-    sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
-    matchRegex,
-    snapshots: await prevSnaphots(run.watch.id),
-    commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
-    signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
-    runTimeoutMs: RUN_TIMEOUT_MS,
-    now: () => new Date(),
-  };
-
+  // Declared outside the try: the final redact needs it even when the try
+  // threw before secrets were loaded (it then stays empty, which is correct —
+  // nothing was decrypted, so nothing can leak).
+  let secretValues: string[] = [];
   let result: RunResult;
   try {
+    // Inside the try: an undecryptable secret (bad rotation, tampered row)
+    // becomes an ordinary failed run with Watch.lastStatus updated, instead
+    // of the job dying in BullMQ and the dashboard showing a stale status.
+    const secrets = await loadSecrets(run.watch.id);
+    secretValues = Object.values(secrets);
+
+    const ctx: RunContext = {
+      fetch: withSecrets(safeFetch, secrets),
+      sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
+      matchRegex,
+      snapshots: await prevSnaphots(run.watch.id),
+      commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
+      signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
+      runTimeoutMs: RUN_TIMEOUT_MS,
+      now: () => new Date(),
+    };
+
     result = await runFlow(run.watch.flow, ctx);
   } catch (e) {
     result = {
