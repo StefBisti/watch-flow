@@ -31,6 +31,9 @@ importers:
       '@watchflow/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@watchflow/security':
+        specifier: workspace:*
+        version: link:../../packages/security
       bullmq:
         specifier: ^6.3.4
         version: 6.3.4(ioredis@6.0.0(supports-color@7.2.0))(pg@8.23.0)

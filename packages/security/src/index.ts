@@ -5,3 +5,4 @@ export * from "./safe-fetch.ts";
 export * from "./redact.ts";
 export * from "./crypto.ts";
 export * from "./template.ts";
+export * from "./secret-refs.ts";

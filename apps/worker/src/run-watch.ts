@@ -7,7 +7,13 @@ import {
   RegexRequest,
   RunResult,
 } from "@watchflow/flow";
-import { createSafeFetch, redact } from "@watchflow/security";
+import {
+  createSafeFetch,
+  decryptSecret,
+  parseMasterKey,
+  redact,
+  withSecrets,
+} from "@watchflow/security";
 import { Resend } from "resend";
 import { env } from "./env.ts";
 
@@ -17,6 +23,9 @@ const RUN_TIMEOUT_MS = 60_000;
 const resend = new Resend(env.RESEND_API_KEY);
 
 const safeFetch = createSafeFetch();
+
+// Parsed once at boot: a malformed key crashes the worker on start, not mid-run.
+const masterKey = parseMasterKey(env.SECRETS_MASTER_KEY);
 
 const commitSnapshots = async (
   snapshots: Record<string, string>,
@@ -55,6 +64,25 @@ async function prevSnaphots(watchId: string): Promise<Record<string, string>> {
   return Object.fromEntries(res.map((r) => [r.nodeId, r.value]));
 }
 
+async function loadSecrets(watchId: string): Promise<Record<string, string>> {
+  const rows = await prisma.watchSecret.findMany({
+    where: { watchId },
+    select: { name: true, iv: true, ciphertext: true },
+  });
+  return Object.fromEntries(
+    rows.map((r) => [
+      r.name,
+      decryptSecret(
+        // Prisma 7 returns Bytes as Uint8Array; decryptSecret calls Buffer
+        // methods (.toString("utf8")) on it, so convert back.
+        { iv: Buffer.from(r.iv), ciphertext: Buffer.from(r.ciphertext) },
+        masterKey,
+        watchId, // AAD — must equal what the web action bound it to
+      ),
+    ]),
+  );
+}
+
 export async function runWatch(runId: string) {
   const run = await prisma.run.findUnique({
     where: { id: runId },
@@ -71,19 +99,29 @@ export async function runWatch(runId: string) {
     data: { status: "running" },
   });
 
-  const ctx: RunContext = {
-    fetch: safeFetch,
-    sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
-    matchRegex,
-    snapshots: await prevSnaphots(run.watch.id),
-    commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
-    signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
-    runTimeoutMs: RUN_TIMEOUT_MS,
-    now: () => new Date(),
-  };
-
+  // Declared outside the try: the final redact needs it even when the try
+  // threw before secrets were loaded (it then stays empty, which is correct —
+  // nothing was decrypted, so nothing can leak).
+  let secretValues: string[] = [];
   let result: RunResult;
   try {
+    // Inside the try: an undecryptable secret (bad rotation, tampered row)
+    // becomes an ordinary failed run with Watch.lastStatus updated, instead
+    // of the job dying in BullMQ and the dashboard showing a stale status.
+    const secrets = await loadSecrets(run.watch.id);
+    secretValues = Object.values(secrets);
+
+    const ctx: RunContext = {
+      fetch: withSecrets(safeFetch, secrets),
+      sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
+      matchRegex,
+      snapshots: await prevSnaphots(run.watch.id),
+      commitSnapshots: (snapshots) => commitSnapshots(snapshots, run.watch.id),
+      signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
+      runTimeoutMs: RUN_TIMEOUT_MS,
+      now: () => new Date(),
+    };
+
     result = await runFlow(run.watch.flow, ctx);
   } catch (e) {
     result = {
@@ -104,9 +142,10 @@ export async function runWatch(runId: string) {
       where: { id: runId },
       data: {
         status,
-        error: error,
+        // copied out of the log BEFORE redaction, so it needs scrubbing too
+        error: error === null ? null : (redact(error, secretValues) as string),
         endedAt: new Date(),
-        log: redact(result.log) as Prisma.InputJsonValue,
+        log: redact(result.log, secretValues) as Prisma.InputJsonValue,
       },
     }),
     prisma.watch.update({
