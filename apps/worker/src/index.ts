@@ -81,6 +81,17 @@ async function tick() {
         });
         if (count === 0) continue;
 
+        // One run per watch at a time. A run still pending or running (say,
+        // deferred by the rate limit) would race this one: both would read the
+        // same previous snapshot, and both would email "changed".
+        // ponytail: check-then-insert, like runWatchNow; a partial unique index
+        // on Run(watchId) WHERE status IN ('pending','running') makes it airtight.
+        const inFlight = await prisma.run.findFirst({
+          where: { watchId: w.id, status: { in: ["pending", "running"] } },
+          select: { id: true },
+        });
+        if (inFlight) continue;
+
         const run = await prisma.run.create({
           data: {
             watchId: w.id,
