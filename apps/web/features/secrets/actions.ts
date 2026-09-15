@@ -49,7 +49,7 @@ export async function createSecret(
 
     await prisma.$executeRaw`
       INSERT INTO "WatchSecret" ("id", "watchId", "name", "ciphertext", "iv")
-      VALUE (${randomUUID()}, ${watch.id}, ${parsed.data.name}, ${bytes.ciphertext}, ${bytes.iv})
+      VALUES (${randomUUID()}, ${watch.id}, ${parsed.data.name}, ${bytes.ciphertext}, ${bytes.iv})
       ON CONFLICT ("watchId", "name")
       DO UPDATE SET "ciphertext" = ${bytes.ciphertext}, "iv" = ${bytes.iv}
     `;

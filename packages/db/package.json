@@ -8,9 +8,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "prisma db seed",
-    "db:studio": "prisma studio",
+    "db:migrate": "DATABASE_URL=$DIRECT_URL prisma migrate dev",
+    "db:seed": "DATABASE_URL=$DIRECT_URL prisma db seed",
+    "db:studio": "DATABASE_URL=$DIRECT_URL prisma studio",
     "build": "prisma generate"
   },
   "devDependencies": {

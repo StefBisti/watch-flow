@@ -19,7 +19,6 @@ jobs:
     env:
       # Dummy values
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
       AUTH_SECRET: ci-dummy-secret-not-used-anywhere-0000
       AUTH_GITHUB_ID: ci-dummy-id
       AUTH_GITHUB_SECRET: ci-dummy-secret
