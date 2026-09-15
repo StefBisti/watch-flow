@@ -91,10 +91,18 @@ async function readCapped(
   return { body: Buffer.concat(chunks).toString("utf8"), truncated: false };
 }
 
+export class RateLimitedError extends Error {
+  constructor(hostname: string) {
+    super(`rate limited: too many requests to ${hostname}, try again shortly`);
+    this.name = "RateLimitedError";
+  }
+}
+
 export type SafeFetchOptions = {
   resolver?: Resolver;
   policy?: (raw: string, resolve: Resolver) => Promise<UrlPolicyResult>;
   timeoutMs?: number;
+  allowHost?: (hostname: string) => Promise<boolean>;
 };
 
 export function createSafeFetch(opts: SafeFetchOptions = {}) {
@@ -126,6 +134,12 @@ export function createSafeFetch(opts: SafeFetchOptions = {}) {
       // http://169.254.169.254/ is the classic SSRF bypass.
       const verdict = await policy(url, resolver);
       if (!verdict.ok) throw new Error(`fetch blocked: ${verdict.reason}`);
+
+      // 🔒 Counted per hop, like the policy: a redirect spends the budget of
+      // the host it lands on, so a site can't 302 its traffic onto someone else.
+      if (opts.allowHost && !(await opts.allowHost(verdict.url.hostname))) {
+        throw new RateLimitedError(verdict.url.hostname);
+      }
 
       // 🔒 Caller headers were consented to ONE origin. A watched site can
       // 302 anywhere public, so re-sending Authorization / X-Api-Key across
