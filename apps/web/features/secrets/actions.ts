@@ -9,6 +9,7 @@ import { mapPrismaError } from "@/lib/prisma-errors";
 import { prisma } from "@watchflow/db";
 import { encryptSecret, parseMasterKey } from "@watchflow/security";
 import { env } from "@/lib/env";
+import { randomUUID } from "node:crypto";
 
 ////////////////////////////////////////////////////////////// create secret
 
@@ -46,15 +47,12 @@ export async function createSecret(
       ciphertext: new Uint8Array(ciphertext),
     };
 
-    await prisma.watchSecret.upsert({
-      where: { watchId_name: { watchId: watch.id, name: parsed.data.name } },
-      create: {
-        watchId: watch.id,
-        name: parsed.data.name,
-        ...bytes,
-      },
-      update: bytes,
-    });
+    await prisma.$executeRaw`
+      INSERT INTO "WatchSecret" ("id", "watchId", "name", "ciphertext", "iv")
+      VALUES (${randomUUID()}, ${watch.id}, ${parsed.data.name}, ${bytes.ciphertext}, ${bytes.iv})
+      ON CONFLICT ("watchId", "name")
+      DO UPDATE SET "ciphertext" = ${bytes.ciphertext}, "iv" = ${bytes.iv}
+    `;
   } catch (e) {
     return fail(mapPrismaError(e));
   }
