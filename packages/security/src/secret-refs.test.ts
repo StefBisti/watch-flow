@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { redact } from "./redact.ts";
-import { resolveSecretRefs } from "./secret-refs.ts";
+import type { SafeFetchRequest, SafeFetchResponse } from "./safe-fetch.ts";
+import { resolveSecretRefs, withSecrets } from "./secret-refs.ts";
 
 const secrets = { API_TOKEN: "tok_live_123", DOLLAR: "abc$&def" };
 
@@ -58,4 +59,30 @@ test("a resolved secret echoed back into a run log is redacted", () => {
   expect(JSON.stringify(redact(log, Object.values(secrets)))).not.toContain(
     "tok_live_123",
   );
+});
+
+test("withSecrets resolves request headers and scrubs echoes from the body", async () => {
+  const calls: SafeFetchRequest[] = [];
+  const echo = async (req: SafeFetchRequest): Promise<SafeFetchResponse> => {
+    calls.push(req);
+    return {
+      status: 200,
+      headers: {},
+      body: JSON.stringify({ headers: req.headers }),
+      truncated: false,
+    };
+  };
+
+  const res = await withSecrets(
+    echo,
+    secrets,
+  )({
+    url: "https://api.example.com/me",
+    method: "GET",
+    headers: { authorization: "Bearer {{secret.API_TOKEN}}" },
+  });
+
+  expect(calls[0].headers).toEqual({ authorization: "Bearer tok_live_123" });
+  expect(res.body).not.toContain("tok_live_123");
+  expect(res.body).toContain("[REDACTED]");
 });

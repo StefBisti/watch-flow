@@ -12,7 +12,7 @@ import {
   decryptSecret,
   parseMasterKey,
   redact,
-  resolveSecretRefs,
+  withSecrets,
 } from "@watchflow/security";
 import { Resend } from "resend";
 import { env } from "./env.ts";
@@ -103,8 +103,7 @@ export async function runWatch(runId: string) {
   });
 
   const ctx: RunContext = {
-    fetch: (req) =>
-      safeFetch({ ...req, headers: resolveSecretRefs(req.headers, secrets) }),
+    fetch: withSecrets(safeFetch, secrets),
     sendEmail: (msg) => sendEmail(msg, run.watch.user.email),
     matchRegex,
     snapshots: await prevSnaphots(run.watch.id),
