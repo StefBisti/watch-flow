@@ -31,6 +31,12 @@ COPY packages/security/src packages/security/src
 # Second pass drops devDependencies (typescript, tsx, the Prisma CLI) now the
 # client is generated. --ignore-scripts so postinstall doesn't run again.
 RUN pnpm install --frozen-lockfile --filter "@watchflow/worker..." --prod --ignore-scripts
+RUN pnpm prune --prod --ignore-scripts
+
+# @prisma/client lists `typescript` as an OPTIONAL peer, so pnpm keeps it in
+# the virtual store even after --prod. Nothing imports it at runtime, but its
+# native binary is where the HIGH CVEs that fail the image scan live.
+RUN rm -rf node_modules/.pnpm/typescript@* node_modules/.pnpm/@typescript+typescript-linux-*
 
 ############################  runtime  ############################
 # No shell, no package manager, no utilities: nothing for an attacker who

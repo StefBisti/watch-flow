@@ -81,6 +81,7 @@ jobs:
           exit-code: "1"
           format: sarif
           output: trivy.sarif
+          limit-severities-for-sarif: true
 
       - name: Upload SARIF
         if: always()
@@ -116,6 +117,7 @@ jobs:
           exit-code: "1"
           format: sarif
           output: trivy-image.sarif
+          limit-severities-for-sarif: true
 
       - name: Upload SARIF
         if: always()
