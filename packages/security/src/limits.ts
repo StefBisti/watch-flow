@@ -9,3 +9,5 @@ export const MAX_RENDERED_OUTPUT = 100_000;
 
 export const HOST_RATE_LIMIT = 6;
 export const HOST_RATE_WINDOW_MS = 60_000;
+
+export const HEARTBEAT_KEY = "wf:worker:heartbeat";

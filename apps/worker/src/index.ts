@@ -4,6 +4,7 @@ import { redis } from "./host-limit.ts";
 import { env } from "./env.ts";
 import { prisma } from "@watchflow/db";
 import { runWatch } from "./run-watch.ts";
+import { startHeartbeat } from "./heartbeat.ts";
 
 /////////////////////////////////////////////////////////////// queue & worker
 
@@ -113,6 +114,7 @@ async function tick() {
 }
 const tickerId = setInterval(tick, 60_000);
 tick();
+const heartbeatId = startHeartbeat();
 
 /////////////////////////////////////////////////////////////// shutdown
 
@@ -125,6 +127,7 @@ async function shutdown(signal: NodeJS.Signals) {
 
   try {
     clearInterval(tickerId);
+    clearInterval(heartbeatId);
     await worker.close();
     console.log("Worker closed");
     await queue.close();
