@@ -27,7 +27,7 @@ jobs:
       packages: write # push to GHCR
       id-token: write # cosign keyless signing
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/watch-flow-worker
+      IMAGE: ghcr.io/stefbisti/watch-flow-worker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
