@@ -1,7 +1,7 @@
 import { Prisma, prisma } from "@watchflow/db";
-import {
+import { runFlow } from "@watchflow/flow";
+import type {
   EmailMessage,
-  runFlow,
   RunContext,
   RegexMatch,
   RegexRequest,
