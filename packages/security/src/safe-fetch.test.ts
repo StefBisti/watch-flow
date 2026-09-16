@@ -2,7 +2,11 @@ import { afterAll, expect, test, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
-import { createSafeFetch, type SafeFetchOptions } from "./safe-fetch.ts";
+import {
+  createSafeFetch,
+  RateLimitedError,
+  type SafeFetchOptions,
+} from "./safe-fetch.ts";
 import { MAX_REDIRECTS, MAX_RESPONSE_BYTES } from "./limits.ts";
 
 /* Test policy: approves everything, pins every hostname to loopback. */
@@ -240,7 +244,10 @@ test("🔒 decompresses when content-encoding is uppercase GZIP", async () => {
     res.setHeader("content-encoding", "GZIP");
     res.end(gzipSync(Buffer.from("hello gzip")));
   });
-  const res = await fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" });
+  const res = await fetchWith()({
+    url: `http://watch.test:${port}/`,
+    method: "GET",
+  });
   expect(res.body).toBe("hello gzip");
   expect(res.headers["content-encoding"]).toBeUndefined();
 });
@@ -249,7 +256,10 @@ test("a truncated response drops its stale content-length", async () => {
   const port = await listen((_req, res) => {
     res.end(Buffer.alloc(MAX_RESPONSE_BYTES + 50_000, "a"));
   });
-  const res = await fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" });
+  const res = await fetchWith()({
+    url: `http://watch.test:${port}/`,
+    method: "GET",
+  });
   expect(res.truncated).toBe(true);
   expect(res.headers["content-length"]).toBeUndefined();
 });
@@ -303,4 +313,39 @@ test("🔒 refuses an encoding it cannot decode rather than returning garbage", 
   await expect(
     fetchWith()({ url: `http://watch.test:${port}/`, method: "GET" }),
   ).rejects.toThrow(/unsupported content-encoding/);
+});
+
+/* ----------------------------------------------------------- rate limit --- */
+
+test("🔒 a host over its rate limit is refused before anything is sent", async () => {
+  let hits = 0;
+  const port = await listen((_req, res) => {
+    hits++;
+    res.end("ok");
+  });
+  const allowHost = vi.fn(async (_hostname: string) => false);
+  await expect(
+    fetchWith({ allowHost })({
+      url: `http://watch.test:${port}/`,
+      method: "GET",
+    }),
+  ).rejects.toBeInstanceOf(RateLimitedError);
+  expect(hits).toBe(0);
+  expect(allowHost).toHaveBeenCalledWith("watch.test");
+});
+
+test("🔒 every redirect hop is counted against the host it lands on", async () => {
+  const port = await listen((req, res) => {
+    if (req.url === "/start") {
+      res.writeHead(302, { location: `http://other.test:${port}/end` });
+      res.end();
+    } else res.end("done");
+  });
+  const allowHost = vi.fn(async (_hostname: string) => true);
+  const res = await fetchWith({ allowHost })({
+    url: `http://watch.test:${port}/start`,
+    method: "GET",
+  });
+  expect(res.body).toBe("done");
+  expect(allowHost.mock.calls).toEqual([["watch.test"], ["other.test"]]);
 });

@@ -1,4 +1,6 @@
-import { Queue, Worker } from "bullmq";
+import { DelayedError, Queue, Worker } from "bullmq";
+import { HOST_RATE_WINDOW_MS } from "@watchflow/security";
+import { redis } from "./host-limit.ts";
 import { env } from "./env.ts";
 import { prisma } from "@watchflow/db";
 import { runWatch } from "./run-watch.ts";
@@ -20,7 +22,21 @@ const queue = new Queue<WatchJob>("watch-runs", {
 
 const worker = new Worker<WatchJob>(
   "watch-runs",
-  async (job) => await runWatch(job.data.runId),
+  async (job, token) => {
+    const deferred = await runWatch(job.data.runId);
+    if (!deferred) return;
+
+    // Retry at a random moment inside the NEXT window, so deferred jobs don't
+    // all wake at the same millisecond and hit the limit together again.
+    const untilNextWindow =
+      HOST_RATE_WINDOW_MS - (Date.now() % HOST_RATE_WINDOW_MS);
+    await job.moveToDelayed(
+      Date.now() + untilNextWindow + Math.random() * HOST_RATE_WINDOW_MS,
+      token,
+    );
+    // Tells BullMQ the job was moved on purpose: neither completed nor failed.
+    throw new DelayedError();
+  },
   { connection, concurrency: 5 },
 );
 
@@ -65,6 +81,17 @@ async function tick() {
         });
         if (count === 0) continue;
 
+        // One run per watch at a time. A run still pending or running (say,
+        // deferred by the rate limit) would race this one: both would read the
+        // same previous snapshot, and both would email "changed".
+        // ponytail: check-then-insert, like runWatchNow; a partial unique index
+        // on Run(watchId) WHERE status IN ('pending','running') makes it airtight.
+        const inFlight = await prisma.run.findFirst({
+          where: { watchId: w.id, status: { in: ["pending", "running"] } },
+          select: { id: true },
+        });
+        if (inFlight) continue;
+
         const run = await prisma.run.create({
           data: {
             watchId: w.id,
@@ -102,6 +129,7 @@ async function shutdown(signal: NodeJS.Signals) {
     console.log("Worker closed");
     await queue.close();
     console.log("Queue closed");
+    await redis.quit();
     await prisma.$disconnect();
   } catch (err) {
     console.log("shutdown failed", err);
