@@ -1,0 +1,14 @@
+app = "watchflow-worker"
+primary_region = "fra"
+
+# No [http_service] and no [[services]]: nothing can reach this app from
+# the internet or from Flycast. It only makes outbound connections — Neon,
+# Upstash, and the sites it watches. That is the reason the worker lives here
+# instead of on Vercel.
+
+[env]
+  NODE_ENV = "production"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
