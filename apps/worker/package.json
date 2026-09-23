@@ -12,14 +12,14 @@
     "@watchflow/db": "workspace:*",
     "@watchflow/flow": "workspace:*",
     "@watchflow/security": "workspace:*",
-    "bullmq": "^6.3.4",
+    "bullmq": "^6.3.8",
     "ioredis": "^6.0.0",
-    "resend": "^6.26.0",
-    "zod": "^4.5.4"
+    "resend": "^6.28.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
-    "tsx": "^4.23.13",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }
