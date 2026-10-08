@@ -30,7 +30,10 @@ export const jsonPathNode = defineNode({
 
     let matches: unknown[];
     try {
-      matches = JSONPath<unknown[]>({ path: config.path, json, eval: false });
+      // v11 dropped the generic and returns unknown; wrap defaults to true,
+      // so a successful query is always an array.
+      const result = JSONPath({ path: config.path, json, eval: false });
+      matches = Array.isArray(result) ? result : [];
     } catch {
       throw new Error("json_path could not evaluate that path");
     }
