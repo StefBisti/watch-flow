@@ -3,7 +3,7 @@
   "packageManager": "pnpm@11.22.0",
   "devDependencies": {
     "lefthook": "^2.2.2",
-    "turbo": "^2.11.9"
+    "turbo": "^2.11.10"
   },
   "scripts": {
     "dev": "turbo run dev",
